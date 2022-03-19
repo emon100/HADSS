@@ -1,38 +1,41 @@
 # HADSS
 HADSS is short for High Availability Distributed Storage System.
 
-## Overview
 HADSS can be used as backend of a Object Storage Service.
 
-## Design
-### Philosophy
+## Design Philosophy
 High Availability in HADSS stands for:
 1. No Single Point Failure.
 2. Responsive even when clusters scale up/down.
 
 HADSS can answer basic requests even when the entire Monitor Layer is down.
 
-### Architecture
-HADSS consists of 3 layers: **Gateway Layer**, **Monitor Layer**
-and **Storage Layer**.
+## Architecture
+HADSS consists of 3 layers:
+- Gateway Layer
+- Monitor Layer
+- Storage Layer
 
-Each Layer contains nodes in different 
+Each Layer contain nodes in different regions, data centers or racks.
 
-#### Gateway Layer
+### Gateway Layer
 Gateway Layer faces users' requests.
-The best practice is to place **Load Blancers** before Gateway Nodes.
 
-Gateway Layer warps different kinds of storage services into RPCs to the
-Storage Layer and Monitor Layer. e.g. The business logic for 
-a Object Storage Service is usually on Gateway Layer.
+Gateway Layer warps different kinds of storage services into RPCs to the Storage Layer and Monitor Layer.
+e.g. The business logic for an Object Storage Service is usually on Gateway Layer.
 
-Gateway Layer can be stateless or stateful. A stateless Gateway Layer utilze
+The best practice in production is to place **Load Balancers** before Gateway Nodes.
 
-#### Monitor Layer
 
-#### Storage Layer
+### Monitor Layer
+Monitor Layer monitors Storage Layer status and performs recovery. e.g.
+- Monitor health of Storage Nodes
+- Monitor Storage Nodes cluster scales up/down
+- Detect and recover data corruptions (Hard disk sometimes corrupts files)
 
-### Sequence Diagram
+### Storage Layer
+
+## How it works
 The System's sequence diagram when storing a file by Object Storage Gateway.
 ```mermaid
 sequenceDiagram
@@ -123,4 +126,4 @@ sequenceDiagram
     
 ```
 
-### Testing
+## Testing
