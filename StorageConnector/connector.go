@@ -5,12 +5,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type ConsistencyPolicy int
@@ -33,6 +33,7 @@ type StorageNodePutter interface {
 type BasicStorageConnection struct {
 	addr               string
 	consistency_policy ConsistencyPolicy
+	timeout            time.Duration
 }
 
 func validateBasicStorageConnection(conn BasicStorageConnection) error {
@@ -71,25 +72,23 @@ func (recv BasicStorageConnection) GetSlice(handler []byte) (buf []byte, err err
 	handlerInHex := hex.EncodeToString(handler)
 	b.WriteString(handlerInHex)
 
-	log.Println("[]handler")
-
-	resp, err := http.Get(b.String())
-	if err != nil {
-		return buf, err
+	requestUrl := b.String()
+	client := new(http.Client)
+	client.Timeout = recv.timeout
+	resp, err := client.Get(requestUrl)
+	if resp != nil {
+		defer resp.Body.Close()
 	}
-	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
-			fmt.Println("Error shouldn't happen.")
-		}
-	}(resp.Body)
+	if err != nil {
+		return buf, fmt.Errorf("requrl: %s, error: %w", b.String(), err)
+	}
 
 	if resp.StatusCode != 200 {
 		body, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
-			return buf, err
+			return nil, fmt.Errorf("error: requrl: %s, status code: %d, error: [%w]", requestUrl, resp.StatusCode, err)
 		}
-		return buf, errors.New(string(body))
+		return buf, fmt.Errorf("error: requrl: %s, status code: %d, body: %s", requestUrl, resp.StatusCode, string(body))
 	}
 
 	return ioutil.ReadAll(resp.Body)
@@ -100,8 +99,24 @@ func (recv BasicStorageConnection) PutSlice(handler []byte, buf []byte) (err err
 	if err != nil {
 		log.Fatal(err)
 	}
-	resp, err := http.Post(fmt.Sprintf("%s?%s%d", recv.addr, "consistency_policy=", recv.consistency_policy),
-		"application/octet-stream", bytes.NewReader(buf))
+
+	b := strings.Builder{}
+
+	b.WriteString(recv.addr)
+	b.WriteString("?consistency_policy=")
+	b.WriteString(strconv.Itoa(int(recv.consistency_policy)))
+	b.WriteString("&handler=")
+	handlerInHex := hex.EncodeToString(handler)
+	b.WriteString(handlerInHex)
+
+	requestUrl := b.String()
+
+	client := new(http.Client)
+	client.Timeout = recv.timeout
+
+	request, _ := http.NewRequest(http.MethodPut, requestUrl, bytes.NewReader(buf))
+	resp, err := client.Do(request)
+
 	if resp != nil {
 		defer resp.Body.Close()
 	}
@@ -112,9 +127,9 @@ func (recv BasicStorageConnection) PutSlice(handler []byte, buf []byte) (err err
 	if resp.StatusCode != 200 {
 		body, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
-			return err
+			return fmt.Errorf("error: status code: %d, error: [%w]", resp.StatusCode, err)
 		}
-		return errors.New(string(body))
+		return fmt.Errorf("error: status code: %d, body: %s", resp.StatusCode, string(body))
 	}
 
 	return nil
@@ -124,7 +139,10 @@ func (recv BasicStorageConnection) String() string {
 	return recv.addr
 }
 
-func NewBasicConnection(addr string, consistency_policy ConsistencyPolicy) (con BasicStorageConnection) {
-	con = BasicStorageConnection{addr, StrongConsistency}
-	return
+func NewBasicConnection(addr string, consistency_policy ConsistencyPolicy, fs ...func(con *BasicStorageConnection)) (con BasicStorageConnection) {
+	con = BasicStorageConnection{addr, consistency_policy, time.Duration(5) * time.Second}
+	for _, f := range fs {
+		f(&con)
+	}
+	return con
 }
