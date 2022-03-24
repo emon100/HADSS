@@ -163,3 +163,58 @@ func TestBasicStorageConnection_PutSlice_timeout(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+//Testing dealing server responses
+func TestBasicStorageConnection_PutSlice_response(t *testing.T) {
+	response_body := []byte("nice job! haha ha")
+	//This server emulates a server which only accepts *Strong Consistency* and *Weak Consistensy*.
+	response_server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("handler") == "" {
+			t.Fatal("PutSlice request query handler is empty.")
+		}
+		if r.Method != http.MethodPut {
+			t.Fatal("PutSlice request method isn't put.")
+		}
+		switch r.URL.Query().Get("consistency_policy") {
+		case "2", "3":
+			body, err := ioutil.ReadAll(r.Body)
+			defer r.Body.Close()
+			if err != nil {
+				t.Fatal("PutSlice_response: testing server can't write body.")
+			}
+			if bytes.Compare(body, response_body) != 0 {
+				t.Errorf("PutSlice_response: data should equal response_body, data: %#v, response_body: %#v", body, response_body)
+			}
+			w.WriteHeader(200)
+		default:
+			w.WriteHeader(502)
+		}
+	}))
+	defer response_server.Close()
+
+	serverUrl := response_server.URL
+
+	good_response_connections := []BasicStorageConnection{
+		NewBasicConnection(serverUrl, StrongConsistency),
+		NewBasicConnection(serverUrl, WeakConsistency),
+	}
+	failed_response_connections := []BasicStorageConnection{
+		NewBasicConnection(serverUrl, NoGuarantee),
+	}
+
+	handler := sha256.Sum256([]byte("try"))
+	for _, conn := range good_response_connections {
+		err := conn.PutSlice(handler[:], response_body)
+		if err != nil {
+			t.Errorf("PutSlice_response: any error shouldn't happen, conn: %v, error: %#v", conn, err)
+			continue
+		}
+	}
+
+	for _, conn := range failed_response_connections {
+		err := conn.PutSlice(handler[:], response_body)
+		if err == nil {
+			t.Errorf("PutSlice_response: error should happen, conn: %v, error: %#v", conn, err)
+		}
+	}
+}
