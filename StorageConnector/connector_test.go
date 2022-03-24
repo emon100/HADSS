@@ -1,26 +1,32 @@
 package connector
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"io/ioutil"
+	"net/http"
+	"net/http/httptest"
+	"sync"
 	"testing"
 )
 
 func TestValidateBasicStorageConnection(t *testing.T) {
 	shouldPassTestcases := []BasicStorageConnection{
-		{"localhost:10990", NoGuarantee},
-		{"localhost:10990", WeakConsistency},
-		{"localhost:10990", StrongConsistency},
+		NewBasicConnection("localhost:10990", NoGuarantee),
+		NewBasicConnection("localhost:10990", WeakConsistency),
+		NewBasicConnection("localhost:10990", StrongConsistency),
 	}
 
 	for _, conn := range shouldPassTestcases {
 		if err := validateBasicStorageConnection(conn); err != nil {
-			t.Errorf("ValidateBasicStorageConnection: should pass validation %v+", conn)
+			t.Errorf("ValidateBasicStorageConnection: should pass validation conn: %v, err: %v", conn, err)
 		}
 	}
 
 	shouldFailTestcases := []BasicStorageConnection{
-		{"", 0},
-		{"", WeakConsistency},
-		{"localhost:10990", 0},
+		NewBasicConnection("", 0),
+		NewBasicConnection("", WeakConsistency),
+		NewBasicConnection("localhost:10990", 0),
 	}
 
 	for _, conn := range shouldFailTestcases {
@@ -40,7 +46,7 @@ func TestValidateHandler(t *testing.T) {
 	}
 	for _, tc := range shouldPassTestcases {
 		if err := validateHandler(tc); err != nil {
-			t.Errorf("ValidateHandler: should pass validation %#v", tc)
+			t.Errorf("ValidateHandler: should pass validation handler: %#v, error: %#v", tc, err)
 		}
 	}
 	tc3 := make([]byte, 32, 64)
@@ -59,5 +65,101 @@ func TestValidateHandler(t *testing.T) {
 
 }
 
-func TestBasicStorageConnection_GetSlice(t *testing.T) {
+//Testing GetSlice in unreachable endpoints
+func TestBasicStorageConnection_GetSlice_timeout(t *testing.T) {
+	shouldTimeoutConnection := []BasicStorageConnection{
+		NewBasicConnection("http://192.0.2.1:12345", StrongConsistency), // 192.0.2.0/24 is TEST-NET-1 in RFC 5731, so it would timeout.
+		NewBasicConnection("http://dont-exist.dontexist:12345", StrongConsistency),
+	}
+	handler := sha256.Sum256([]byte("try"))
+	wg := new(sync.WaitGroup)
+	wg.Add(len(shouldTimeoutConnection))
+	for _, v := range shouldTimeoutConnection {
+		go func(v BasicStorageConnection) {
+			_, err := v.GetSlice(handler[:])
+			if err == nil {
+				t.Errorf("GetSlice_timeout: should timeout but no error happened")
+			}
+			wg.Done()
+		}(v)
+	}
+	wg.Wait()
+}
+
+//Testing dealing server responses
+func TestBasicStorageConnection_GetSlice_response(t *testing.T) {
+	response_body := []byte("nice job! haha ha")
+	//This server emulates a server which only accepts *Strong Consistency* and *Weak Consistensy*.
+	response_server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("handler") == "" {
+			t.Fatal("GetSlice request query handler is empty.")
+		}
+		if r.Method != http.MethodGet {
+			t.Fatal("PutSlice request method isn't put.")
+		}
+		switch r.URL.Query().Get("consistency_policy") {
+		case "2", "3":
+			_, err := w.Write(response_body)
+			if err != nil {
+				t.Fatal("GetSlice_response: testing server can't write body.")
+			}
+		default:
+			w.WriteHeader(502)
+		}
+	}))
+	defer response_server.Close()
+
+	serverUrl := response_server.URL
+
+	good_response_connections := []BasicStorageConnection{
+		NewBasicConnection(serverUrl, StrongConsistency),
+		NewBasicConnection(serverUrl, WeakConsistency),
+	}
+	failed_response_connections := []BasicStorageConnection{
+		NewBasicConnection(serverUrl, NoGuarantee),
+	}
+
+	handler := sha256.Sum256([]byte("try"))
+	for _, conn := range good_response_connections {
+		data, err := conn.GetSlice(handler[:])
+		if err != nil {
+			t.Errorf("GetSlice_response: any error shouldn't happen, conn: %v, error: %#v", conn, err)
+			continue
+		}
+		if data == nil {
+			t.Errorf("GetSlice_response: data shouldn't be nil, conn: %v", conn)
+			continue
+		}
+		if bytes.Compare(data, response_body) != 0 {
+			t.Errorf("GetSlice_response: data should equal response_body, conn: %v, data: %#v, response_body: %#v", conn, data, response_body)
+		}
+	}
+
+	for _, conn := range failed_response_connections {
+		_, err := conn.GetSlice(handler[:])
+		if err == nil {
+			t.Errorf("GetSlice_response: error should happen, conn: %v, error: %#v", conn, err)
+		}
+	}
+}
+
+//Testing PutSlice in unreachable endpoints
+func TestBasicStorageConnection_PutSlice_timeout(t *testing.T) {
+	shouldTimeoutConnection := []BasicStorageConnection{
+		NewBasicConnection("http://192.0.2.1:12345", StrongConsistency), // 192.0.2.0/24 is TEST-NET-1 in RFC 5731, so it would timeout.
+		NewBasicConnection("http://dont-exist.dontexist:12345", StrongConsistency),
+	}
+	handler := sha256.Sum256([]byte("try"))
+	wg := new(sync.WaitGroup)
+	wg.Add(len(shouldTimeoutConnection))
+	for _, v := range shouldTimeoutConnection {
+		go func(v BasicStorageConnection) {
+			err := v.PutSlice(handler[:], []byte("try"))
+			if err == nil {
+				t.Errorf("GetSlice_timeout: should timeout but no error happened")
+			}
+			wg.Done()
+		}(v)
+	}
+	wg.Wait()
 }
