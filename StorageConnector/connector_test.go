@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"sync"
 	"testing"
 )
@@ -91,11 +92,13 @@ func TestBasicStorageConnection_GetSlice_response(t *testing.T) {
 	response_body := []byte("nice job! haha ha")
 	//This server emulates a server which only accepts *Strong Consistency* and *Weak Consistensy*.
 	response_server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("handler") == "" {
+		path := r.URL.Path
+		reg := regexp.MustCompile("^/slice/([^/]+)$")
+		if !reg.MatchString(path) {
 			t.Fatal("GetSlice request query handler is empty.")
 		}
 		if r.Method != http.MethodGet {
-			t.Fatal("PutSlice request method isn't put.")
+			t.Fatal("GetSlice request method isn't put.")
 		}
 		switch r.URL.Query().Get("consistency_policy") {
 		case "2", "3":
@@ -169,8 +172,10 @@ func TestBasicStorageConnection_PutSlice_response(t *testing.T) {
 	response_body := []byte("nice job! haha ha")
 	//This server emulates a server which only accepts *Strong Consistency* and *Weak Consistensy*.
 	response_server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("handler") == "" {
-			t.Fatal("PutSlice request query handler is empty.")
+		path := r.URL.Path
+		reg := regexp.MustCompile("^/slice/([^/]+)$")
+		if !reg.MatchString(path) {
+			t.Fatal("GetSlice request query handler is empty.")
 		}
 		if r.Method != http.MethodPut {
 			t.Fatal("PutSlice request method isn't put.")
