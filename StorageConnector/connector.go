@@ -66,11 +66,11 @@ func (recv BasicStorageConnection) GetSlice(handler []byte) (buf []byte, err err
 	b := strings.Builder{}
 
 	b.WriteString(recv.addr)
-	b.WriteString("?consistency_policy=")
-	b.WriteString(strconv.Itoa(int(recv.consistency_policy)))
-	b.WriteString("&handler=")
+	b.WriteString("/slice/")
 	handlerInHex := hex.EncodeToString(handler)
 	b.WriteString(handlerInHex)
+	b.WriteString("?consistency_policy=")
+	b.WriteString(strconv.Itoa(int(recv.consistency_policy)))
 
 	requestUrl := b.String()
 	client := new(http.Client)
@@ -103,11 +103,12 @@ func (recv BasicStorageConnection) PutSlice(handler []byte, buf []byte) (err err
 	b := strings.Builder{}
 
 	b.WriteString(recv.addr)
+	b.WriteString("/slice/")
+	handlerInHex := hex.EncodeToString(handler)
+	b.WriteString(handlerInHex)
 	b.WriteString("?consistency_policy=")
 	b.WriteString(strconv.Itoa(int(recv.consistency_policy)))
 	b.WriteString("&handler=")
-	handlerInHex := hex.EncodeToString(handler)
-	b.WriteString(handlerInHex)
 
 	requestUrl := b.String()
 
@@ -116,7 +117,6 @@ func (recv BasicStorageConnection) PutSlice(handler []byte, buf []byte) (err err
 
 	request, _ := http.NewRequest(http.MethodPut, requestUrl, bytes.NewReader(buf))
 	resp, err := client.Do(request)
-
 	if resp != nil {
 		defer resp.Body.Close()
 	}
