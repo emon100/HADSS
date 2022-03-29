@@ -13,14 +13,6 @@ import (
 	"time"
 )
 
-type ConsistencyPolicy int
-
-const (
-	NoGuarantee ConsistencyPolicy = iota + 1
-	WeakConsistency
-	StrongConsistency
-)
-
 type StorageNodeGetter interface {
 	GetSlice(handler []byte) (buf []byte, err error)
 }
@@ -36,33 +28,49 @@ type BasicStorageConnection struct {
 	timeout            time.Duration
 }
 
-func validateBasicStorageConnection(conn BasicStorageConnection) error {
-	if conn.addr == "" {
-		return errors.New("connection addr is empty")
+func WithTimeout(timeout time.Duration) func(con *BasicStorageConnection) {
+	return func(con *BasicStorageConnection) {
+		con.timeout = timeout
 	}
-	if conn.consistency_policy == 0 {
-		return errors.New("connection addr is empty")
+}
+
+/*
+ * goal:
+ * private constuctor (prevent malformed struct) with options support.
+ * how to use implicit interface to support this?
+ * difficulties: the options varies but i want pass same option parameter in different constuctors.
+ * Why failed: golang lacks the ability to statically dispatch logic by type.
+ */
+
+// Build new Basic Connection.
+func NewBasicConnection(addr string, consistency_policy ConsistencyPolicy, fs ...func(con *BasicStorageConnection)) (con BasicStorageConnection) {
+	con = BasicStorageConnection{addr, consistency_policy, DefaultTimeout}
+	for _, f := range fs {
+		f(&con)
+	}
+	return con
+}
+
+func validateBasicStorageConnection(conn BasicStorageConnection) error { //TODO: not completed
+	if conn.addr == "" {
+		return ErrConnAddrEmpty
+	}
+	if conn.consistency_policy <= 0 || conn.consistency_policy > StrongConsistency {
+		return ErrConsistencyInvalid
 	}
 	return nil
 }
 
 func validateHandler(handler []byte) error {
 	switch len(handler) {
-	case 64:
+	case SHA256BytesLength:
 		return nil
 	default:
-		return errors.New("Handler should be 64 bytes long.")
+		return ErrHandlerInvalid
 	}
 }
 
-func (recv BasicStorageConnection) GetSlice(handler []byte) (buf []byte, err error) {
-	err = validateHandler(handler)
-	err = validateBasicStorageConnection(recv)
-	if err != nil {
-		log.Fatal(err)
-		return buf, err
-	}
-
+func (recv BasicStorageConnection) buildAPISliceURL(handler []byte) string {
 	b := strings.Builder{}
 
 	b.WriteString(recv.addr)
@@ -95,9 +103,8 @@ func (recv BasicStorageConnection) GetSlice(handler []byte) (buf []byte, err err
 }
 
 func (recv BasicStorageConnection) PutSlice(handler []byte, buf []byte) (err error) {
-	err = validateBasicStorageConnection(recv)
-	if err != nil {
-		log.Fatal(err)
+	if buf == nil {
+		return ErrPutNilSlice
 	}
 
 	b := strings.Builder{}
