@@ -3,10 +3,8 @@ package connector
 import (
 	"bytes"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -21,7 +19,7 @@ type StorageNodePutter interface {
 	PutSlice(handler []byte, buf []byte) (err error)
 }
 
-//Implement a http connection to Storage node.
+//Implement a http connection to Storage node. (Basic means no HTTP/1.1 TCP Connection reuse)
 type BasicStorageConnection struct {
 	addr               string
 	consistency_policy ConsistencyPolicy
@@ -81,6 +79,19 @@ func (recv BasicStorageConnection) buildAPISliceURL(handler []byte) string {
 	b.WriteString(strconv.Itoa(int(recv.consistency_policy)))
 
 	requestUrl := b.String()
+	return requestUrl
+}
+
+func (recv BasicStorageConnection) GetSlice(handler []byte) (buf []byte, err error) {
+	if err = validateHandler(handler); err != nil {
+		return nil, err
+	}
+
+	if err = validateBasicStorageConnection(recv); err != nil {
+		return nil, err
+	}
+
+	requestUrl := recv.buildAPISliceURL(handler)
 	client := new(http.Client)
 	client.Timeout = recv.timeout
 	resp, err := client.Get(requestUrl)
@@ -88,7 +99,7 @@ func (recv BasicStorageConnection) buildAPISliceURL(handler []byte) string {
 		defer resp.Body.Close()
 	}
 	if err != nil {
-		return buf, fmt.Errorf("requrl: %s, error: %w", b.String(), err)
+		return nil, fmt.Errorf("requrl: %s, error: %w", requestUrl, err)
 	}
 
 	if resp.StatusCode != 200 {
@@ -96,7 +107,7 @@ func (recv BasicStorageConnection) buildAPISliceURL(handler []byte) string {
 		if err != nil {
 			return nil, fmt.Errorf("error: requrl: %s, status code: %d, error: [%w]", requestUrl, resp.StatusCode, err)
 		}
-		return buf, fmt.Errorf("error: requrl: %s, status code: %d, body: %s", requestUrl, resp.StatusCode, string(body))
+		return nil, fmt.Errorf("error: requrl: %s, status code: %d, body: %s", requestUrl, resp.StatusCode, string(body))
 	}
 
 	return ioutil.ReadAll(resp.Body)
@@ -107,17 +118,14 @@ func (recv BasicStorageConnection) PutSlice(handler []byte, buf []byte) (err err
 		return ErrPutNilSlice
 	}
 
-	b := strings.Builder{}
+	if err = validateHandler(handler); err != nil {
+		return err
+	}
+	if err = validateBasicStorageConnection(recv); err != nil {
+		return err
+	}
 
-	b.WriteString(recv.addr)
-	b.WriteString("/slice/")
-	handlerInHex := hex.EncodeToString(handler)
-	b.WriteString(handlerInHex)
-	b.WriteString("?consistency_policy=")
-	b.WriteString(strconv.Itoa(int(recv.consistency_policy)))
-	b.WriteString("&handler=")
-
-	requestUrl := b.String()
+	requestUrl := recv.buildAPISliceURL(handler)
 
 	client := new(http.Client)
 	client.Timeout = recv.timeout
@@ -144,12 +152,4 @@ func (recv BasicStorageConnection) PutSlice(handler []byte, buf []byte) (err err
 
 func (recv BasicStorageConnection) String() string {
 	return recv.addr
-}
-
-func NewBasicConnection(addr string, consistency_policy ConsistencyPolicy, fs ...func(con *BasicStorageConnection)) (con BasicStorageConnection) {
-	con = BasicStorageConnection{addr, consistency_policy, time.Duration(5) * time.Second}
-	for _, f := range fs {
-		f(&con)
-	}
-	return con
 }

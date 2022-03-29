@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestValidateBasicStorageConnection(t *testing.T) {
@@ -39,8 +40,8 @@ func TestValidateBasicStorageConnection(t *testing.T) {
 }
 
 func TestValidateHandler(t *testing.T) {
-	tc1 := make([]byte, 64)
-	tc2 := make([]byte, 64, 265)
+	tc1 := make([]byte, 32)
+	tc2 := make([]byte, 32, 265)
 	shouldPassTestcases := [][]byte{
 		tc1,
 		tc2,
@@ -50,8 +51,8 @@ func TestValidateHandler(t *testing.T) {
 			t.Errorf("ValidateHandler: should pass validation handler: %#v, error: %#v", tc, err)
 		}
 	}
-	tc3 := make([]byte, 32, 64)
-	tc4 := make([]byte, 0)
+	tc3 := make([]byte, 63, 64)
+	tc4 := make([]byte, 2, 32)
 	shouldFailTestcases := [][]byte{
 		tc3,
 		tc4,
@@ -66,11 +67,28 @@ func TestValidateHandler(t *testing.T) {
 
 }
 
+func TestBasicStorageConnection_GetSlice_bad_args(t *testing.T) {
+	bad_args := [][]byte{
+		make([]byte, 12, 20),
+		make([]byte, 0, 32),
+		make([]byte, 12, 32),
+		make([]byte, 31, 32),
+	}
+	conn := NewBasicConnection("http://localhost", StrongConsistency)
+	for _, v := range bad_args {
+		_, err := conn.GetSlice(v)
+		if err == nil || err != ErrHandlerInvalid {
+			t.Errorf("Handler should be invalid. error: %v", err)
+		}
+	}
+}
+
 //Testing GetSlice in unreachable endpoints
 func TestBasicStorageConnection_GetSlice_timeout(t *testing.T) {
 	shouldTimeoutConnection := []BasicStorageConnection{
-		NewBasicConnection("http://192.0.2.1:12345", StrongConsistency), // 192.0.2.0/24 is TEST-NET-1 in RFC 5731, so it would timeout.
-		NewBasicConnection("http://dont-exist.dontexist:12345", StrongConsistency),
+		// 192.0.2.0/24 is TEST-NET-1 in RFC 5731, so it can't be looked up.
+		NewBasicConnection("http://192.0.2.1:12345", StrongConsistency, WithTimeout(time.Duration(5)*time.Second)),
+		NewBasicConnection("http://dont-exist.dontexist:12345", StrongConsistency, WithTimeout(DefaultTimeout)),
 	}
 	handler := sha256.Sum256([]byte("try"))
 	wg := new(sync.WaitGroup)
@@ -142,6 +160,35 @@ func TestBasicStorageConnection_GetSlice_response(t *testing.T) {
 		_, err := conn.GetSlice(handler[:])
 		if err == nil {
 			t.Errorf("GetSlice_response: error should happen, conn: %v, error: %#v", conn, err)
+		}
+	}
+}
+
+func TestBasicStorageConnection_PutSlice_bad_args(t *testing.T) {
+	good_handler := (sha256.Sum256([]byte("good")))
+	bad_args1 := [][][]byte{
+		{make([]byte, 12, 20), good_handler[:]},
+		{make([]byte, 0, 32), good_handler[:]},
+		{make([]byte, 12, 32), good_handler[:]},
+		{make([]byte, 31, 32), good_handler[:]},
+	}
+	conn := NewBasicConnection("http://localhost", StrongConsistency)
+	for _, v := range bad_args1 {
+		err := conn.PutSlice(v[0], v[1])
+		if err == nil || err != ErrHandlerInvalid {
+			t.Errorf("Handler should be invalid. error: %v", err)
+		}
+	}
+
+	bad_args2 := [][][]byte{
+		{make([]byte, 32), nil},
+		{make([]byte, 32, 64), nil},
+		{make([]byte, 32, 128), nil},
+	}
+	for _, v := range bad_args2 {
+		err := conn.PutSlice(v[0], v[1])
+		if err == nil || err != ErrPutNilSlice {
+			t.Errorf("Buf should be invalid. error: %v", err)
 		}
 	}
 }
