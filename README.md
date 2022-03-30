@@ -26,14 +26,16 @@ e.g. The business logic for an Object Storage Service is usually on Gateway Laye
 
 The best practice in production is to place **Load Balancers** before Gateway Nodes.
 
-
 ### Monitor Layer
 Monitor Layer monitors Storage Layer status and performs recovery. e.g.
 - Monitor health of Storage Nodes
 - Monitor Storage Nodes cluster scales up/down
 - Detect and recover data corruptions (Hard disk sometimes corrupts files)
+- Detect and recover Node Failures (Hard disk sometimes corrupts files)
 
 ### Storage Layer
+Storage Layer stores. It receives (Handler, ConsistencyPolicy, NodeStatusVersion(to be implemented)]) to store a file.
+It can auto-balancing the storage usage between storage nodes by NodeStatus.
 
 ## How it works
 The System's sequence diagram when storing a file by Object Storage Gateway.
@@ -125,6 +127,12 @@ sequenceDiagram
     deactivate GatewayNode
     
 ```
+
+Storage Node Clusters scale up or down don't matter.
+Storage Nodes' data re-balancing matters.
+
+Why: if adding nodes or losing nodes won't change data distribution, then it doesn't matter.
+Only data re-balancing matters, because it will change data distribution.
 
 ## Testing
 ### Unit test
