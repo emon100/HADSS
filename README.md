@@ -49,52 +49,31 @@ sequenceDiagram
     activate GatewayNode
     
     loop sometimes
-        GatewayNode->MonitorCluster: Syncing StorageCluster's states.
+        GatewayNode->MonitorCluster: Syncing StorageCluster's nodestatuse.
     end
     
-    GatewayNode->>GatewayNode: Calculating metadata, Striping Data and calculating StorageNodes used to store data.
-    Note over GatewayNode, GatewayNode: File stripes balance loads between StorageNodes.
+    GatewayNode->>GatewayNode: Calculates metadata and determines StorageNode used to store data.
     
-    par GatewayNode storing metadata.
-        alt If GatewayNodeX is healthy:
-            GatewayNode-)StorageNodeX: Putting data(metadata) async.
-            activate StorageNodeX
-            StorageNodeX-)StorageNode..N: Copy data
-            activate StorageNode..N
-            Note over StorageNodeX, StorageNode..N: Mainly for availabilty goal.
-            StorageNode..N-->>StorageNodeX: Copy complete.
-            deactivate StorageNode..N
-            StorageNodeX-->>GatewayNode: data stored.
-            deactivate StorageNodeX
-        else else fallback to GatewayNodeY(Another node can store the metadata.)
-            GatewayNode-)StorageNodeY: Putting data(metadata) async.
-            activate StorageNodeY
-            StorageNodeY-)StorageNode..N: Copy data
-            activate StorageNode..N
-            Note over StorageNodeY, StorageNode..N: Mainly for availabilty goal.
-            StorageNode..N-->>StorageNodeY: Copy complete.
-            deactivate StorageNode..N
-            StorageNodeY-->>GatewayNode: data stored.
-            deactivate StorageNodeY
-        end
-    and GatewayNode storing data stripes.
-        GatewayNode-)StorageNodeY: Putting data(data stripes) async.
+    Note over GatewayNode, GatewayNode: GatewayNode storing metadata and file.
+    alt If StorageNodeLeader is healthy:
+        GatewayNode-)StorageNodeLeader: Putting data(metadata) async.
+        activate StorageNodeLeader
+        StorageNodeLeader-)StorageNode..N: Copy data
+        activate StorageNode..N
+        Note over StorageNodeLeader, StorageNode..N: 
+        StorageNode..N-->>StorageNodeLeader: Copy complete.
+        deactivate StorageNode..N
+        StorageNodeLeader-->>GatewayNode: data stored.
+        deactivate StorageNodeLeader
+    else else fallback to GatewayNodeY (follower)
+        GatewayNode-)StorageNodeY: Putting data(metadata) async.
         activate StorageNodeY
-        StorageNodeY-)StorageNode..N: Copy data
-        activate StorageNode..N
-        Note over StorageNodeY, StorageNode..N: Mainly for availabilty goal.
-        StorageNode..N-->>StorageNodeY: Copy complete.
-        activate StorageNode..N
+        StorageNodeY->StorageNode..N: Find the real leader and forward request. Then same as step 4-6.
         StorageNodeY-->>GatewayNode: data stored.
         deactivate StorageNodeY
     end
     GatewayNode-->>User: File is stored.
     deactivate GatewayNode
-    
-    loop sometimes
-        StorageNode..N-)StorageNode..N: Copy data between Nodes.
-        Note over StorageNode..N, StorageNode..N:Mainly for consistency goal.
-    end
 ```
 
 The System's sequence diagram when fetching a file by Object Storage Gateway.
@@ -112,12 +91,11 @@ sequenceDiagram
     end
     
     GatewayNode->>GatewayNode: Calculating metadata's position. 
-    Note over GatewayNode, GatewayNode: This calculation uses Consistent Hashing.
-    
-    GatewayNode-)StorageNode0..N: Fetching data(metadata) async.
-    StorageNode0..N-->>GatewayNode: Giving data(metadata) back.
+    Note over GatewayNode, GatewayNode: This calculation uses Consistent Hashing. 
     
     GatewayNode->>GatewayNode: Calculating all data stripes' position. 
+    
+    Note over GatewayNode, GatewayNode: Use quorum read to make sure GatewayNode read the newest content. 
     par Collecting data stripes.
     GatewayNode->StorageNode0..N: Collecting stripesN as step 4 5.
     and
