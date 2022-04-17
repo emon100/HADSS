@@ -43,35 +43,32 @@ The System's sequence diagram when storing a file by Object Storage Gateway.
 sequenceDiagram
     autonumber
     actor User
+    participant GatewayNode
+    participant StorageNode
+    participant StorageNode..N
     
+    Note right of User: may be behind of LoadBalancers
     User->>GatewayNode: Sending a file.
-    Note over User, GatewayNode: LoadBalancers before GatewayNodes.
     activate GatewayNode
     
     loop sometimes
-        GatewayNode->MonitorCluster: Syncing StorageCluster's nodestatuse.
+        GatewayNode->MonitorCluster: Syncing StorageClusters' nodestatus which contains all storage nodes infomation.
     end
     
     GatewayNode->>GatewayNode: Calculates metadata and determines StorageNode used to store data.
     
     Note over GatewayNode, GatewayNode: GatewayNode storing metadata and file.
-    alt If StorageNodeLeader is healthy:
-        GatewayNode-)StorageNodeLeader: Putting data(metadata) async.
-        activate StorageNodeLeader
-        StorageNodeLeader-)StorageNode..N: Copy data
-        activate StorageNode..N
-        Note over StorageNodeLeader, StorageNode..N: 
-        StorageNode..N-->>StorageNodeLeader: Copy complete.
-        deactivate StorageNode..N
-        StorageNodeLeader-->>GatewayNode: data stored.
-        deactivate StorageNodeLeader
-    else else fallback to GatewayNodeY (follower)
-        GatewayNode-)StorageNodeY: Putting data(metadata) async.
-        activate StorageNodeY
-        StorageNodeY->StorageNode..N: Find the real leader and forward request. Then same as step 4-6.
-        StorageNodeY-->>GatewayNode: data stored.
-        deactivate StorageNodeY
-    end
+    Note left of StorageNode: If StorageNode is not actually leader of the node group,
+    Note left of StorageNode: it will forward the request to the real leader.
+    GatewayNode-)StorageNode: Putting data(metadata) async.
+    activate StorageNode
+    StorageNode-)StorageNode..N: Copy data
+    activate StorageNode..N
+    Note over StorageNode, StorageNode..N: Quorum write.
+    StorageNode..N-->>StorageNode: Copy complete.
+    deactivate StorageNode..N
+    StorageNode-->>GatewayNode: data stored.
+    deactivate StorageNode
     GatewayNode-->>User: File is stored.
     deactivate GatewayNode
 ```
@@ -105,6 +102,40 @@ sequenceDiagram
     deactivate GatewayNode
     
 ```
+
+The System's sequence diagram when clusters scale up/down.
+```mermaid
+sequenceDiagram
+    autonumber
+    participant MonitorCluster
+    participant StorageNode..N 
+    
+    StorageNode..N->MonitorCluster: Heartbeat from node1, add a new StorageNode
+    StorageNode..N->MonitorCluster: Heartbeat from node2, add a new StorageNode
+    StorageNode..N->MonitorCluster: Heartbeat from node3, add a new StorageNode
+    
+    Note right of MonitorCluster: MonitorCluster collects healthy StorageNodes
+    MonitorCluster->>MonitorCluster: Calculating new nodestatus and data distribution.
+    MonitorCluster->>StorageNode..N: Ask node1,2,3 to join group1 and do data re-distribution.
+    StorageNode..N-->>MonitorCluster: node1,2,3 Ready
+    MonitorCluster->>MonitorCluster: Put the new data distribution into uncommited version of node status.
+    
+    StorageNode..N->MonitorCluster: Heartbeat from node1, leader of group 1, almost full, need data re-distribution
+    StorageNode..N->MonitorCluster: Heartbeat from node4, add a new StorageNode
+    StorageNode..N->MonitorCluster: Heartbeat from node5, add a new StorageNode
+    StorageNode..N->MonitorCluster: Heartbeat from node6, add a new StorageNode
+    
+    Note right of MonitorCluster: MonitorCluster collects healthy StorageNodes
+    MonitorCluster->>MonitorCluster: Calculating new nodestatus and data distribution.
+    MonitorCluster->>StorageNode..N: Ask group1 to shrink data range and node4,5,6 to join group2 and extend data range.
+    StorageNode..N-->>MonitorCluster: node1,2,3,4,5,6 Ready
+    MonitorCluster->>MonitorCluster: Put the new data distribution into uncommited version of nodestatus.
+    
+    loop
+        MonitorCluster->>MonitorCluster: When the last stable nodestatus expires, replace it with uncommitted version.
+    end
+```
+
 
 Storage Node Clusters scale up or down don't matter.
 Storage Nodes' data re-balancing matters.
