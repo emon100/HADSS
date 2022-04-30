@@ -1,7 +1,7 @@
 use actix_web::post;
+use actix_web::Responder;
 use actix_web::web;
 use actix_web::web::Data;
-use actix_web::Responder;
 use openraft::raft::AppendEntriesRequest;
 use openraft::raft::InstallSnapshotRequest;
 use openraft::raft::VoteRequest;

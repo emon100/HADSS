@@ -1,15 +1,12 @@
 use std::collections::BTreeMap;
 use std::fmt::Debug;
-use std::{fs, io};
 use std::io::Cursor;
 use std::ops::RangeBounds;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use openraft::async_trait::async_trait;
-use openraft::storage::LogState;
-use openraft::storage::Snapshot;
 use openraft::AnyError;
+use openraft::async_trait::async_trait;
 use openraft::EffectiveMembership;
 use openraft::Entry;
 use openraft::EntryPayload;
@@ -21,16 +18,19 @@ use openraft::RaftSnapshotBuilder;
 use openraft::RaftStorage;
 use openraft::SnapshotMeta;
 use openraft::StateMachineChanges;
+use openraft::storage::LogState;
+use openraft::storage::Snapshot;
 use openraft::StorageError;
 use openraft::StorageIOError;
 use openraft::Vote;
 use serde::Deserialize;
 use serde::Serialize;
-use sled::transaction::TransactionError::Storage;
 use tokio::sync::RwLock;
 
-use crate::{ARGS, ExampleNodeId};
+use crate::ExampleNodeId;
 use crate::ExampleTypeConfig;
+
+pub mod fs_io;
 
 /**
  * Here you will set the types of request that will interact with the raft nodes.
@@ -43,66 +43,6 @@ pub enum ExampleRequest {
     Set { key: String, value: Vec<u8> },
 }
 
-
-
-fn transform_id_into_chunks(id: &str) -> Vec<&str> {
-    id.as_bytes()
-      .chunks(2)
-      .map(|x| std::str::from_utf8(x).unwrap())
-      .collect()
-}
-
-fn store_slice(id: &String, body: &Vec<u8>) -> io::Result<()> {
-    let chunks = transform_id_into_chunks(&id);
-
-    let storage_directory_depth:usize = ARGS.storage_directory_depth;
-
-    let directory: String = chunks
-        .iter()
-        .take(storage_directory_depth)
-        .cloned()
-        .intersperse("/")
-        .collect();
-
-    let full_directory = format!("{}/{}", ARGS.storage_location, directory);
-    if let Err(error) = fs::create_dir_all(&full_directory) {
-        return Err(error)
-    }
-
-    let filename: String = chunks
-        .iter()
-        .skip(storage_directory_depth)
-        .cloned()
-        .intersperse("")
-        .collect();
-
-    let full_path = format!("{}/{}", full_directory, filename);
-    println!("{}",full_path);
-    fs::write(full_path, body)
-}
-pub fn read_slice(id: &String) -> io::Result<Vec<u8>> {
-    let chunks = transform_id_into_chunks(&id);
-
-    let storage_directory_depth:usize = ARGS.storage_directory_depth;
-
-    let directory: String = chunks
-        .iter()
-        .take(storage_directory_depth)
-        .cloned()
-        .intersperse("/")
-        .collect();
-
-    let filename: String = chunks
-        .iter()
-        .skip(storage_directory_depth)
-        .cloned()
-        .intersperse("")
-        .collect();
-
-    let path = format!("{}/{}/{}", ARGS.storage_location, directory, filename);
-    println!("{}",path);
-    fs::read(path)
-}
 /**
  * Here you will defined what type of answer you expect from reading the data of a node.
  * In this example it will return a optional value from a given key in
@@ -342,8 +282,8 @@ impl RaftStorage<ExampleTypeConfig> for Arc<ExampleStore> {
                 EntryPayload::Normal(ref req) => match req {
                     ExampleRequest::Set { key, value } => {
                         sm.data.push(key.clone());
-                        if let Err(_) = store_slice(key, value) {//TODO: return error when can't storage.
-                        }else {
+                        if let Err(_) = fs_io::store_slice(key, value) {//TODO: return error when can't storage.
+                        } else {
                             res.push(ExampleResponse { value: None })
                         }
                     }

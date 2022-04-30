@@ -1,9 +1,14 @@
+use std::sync::Arc;
+
+use actix_web::{App, HttpServer};
+use actix_web::web::Data;
 use async_trait::async_trait;
+use openraft::{Config, Node, Raft};
 use openraft::error::AppendEntriesError;
 use openraft::error::InstallSnapshotError;
 use openraft::error::NetworkError;
-use openraft::error::RPCError;
 use openraft::error::RemoteError;
+use openraft::error::RPCError;
 use openraft::error::VoteError;
 use openraft::raft::AppendEntriesRequest;
 use openraft::raft::AppendEntriesResponse;
@@ -11,14 +16,10 @@ use openraft::raft::InstallSnapshotRequest;
 use openraft::raft::InstallSnapshotResponse;
 use openraft::raft::VoteRequest;
 use openraft::raft::VoteResponse;
-use openraft::{Config, Node, Raft};
 use openraft::RaftNetwork;
 use openraft::RaftNetworkFactory;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use std::sync::Arc;
-use actix_web::web::Data;
-use actix_web::{App, HttpServer};
 
 use crate::{ARGS, ExampleNodeId, ExampleStore};
 use crate::app::ExampleApp;
