@@ -4,6 +4,7 @@ import (
 	connector "HADSS/StorageConnector"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"io/ioutil"
@@ -11,21 +12,35 @@ import (
 	"net/http"
 )
 
+type NodeRange struct {
+	NodesAddrs []string
+	RangeStart string
+	RangeEnd   string
+}
+
+type Nodemap struct {
+	NodesRanges []NodeRange
+}
+
 type GatewayController struct {
 	MonitorAddr string
 }
 
 func (self GatewayController) getStorageNodeAddr() string {
-	g, err := http.Get(self.MonitorAddr + "/storageNode?raw")
+	g, err := http.Get(self.MonitorAddr + "/nodemap?raw")
 	if err != nil {
 		return ""
 	}
 	defer g.Body.Close()
 	storageAddr, err := ioutil.ReadAll(g.Body)
+	fmt.Println("%s", string(storageAddr))
+	nodemap := Nodemap{}
+	err = json.Unmarshal(storageAddr, &nodemap)
 	if err != nil {
 		return ""
 	}
-	return string(storageAddr)
+
+	return nodemap.NodesRanges[0].NodesAddrs[0]
 }
 
 func (self GatewayController) getId(c *gin.Context) {
