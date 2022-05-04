@@ -11,8 +11,8 @@ use openraft::Node;
 use openraft::RaftMetrics;
 use web::Json;
 
-use crate::app::ExampleApp;
-use crate::ExampleNodeId;
+use crate::app::StorageNode;
+use crate::StorageNodeId;
 use crate::ExampleTypeConfig;
 
 // --- Cluster management
@@ -24,8 +24,8 @@ use crate::ExampleTypeConfig;
 /// (by calling `change-membership`)
 #[post("/add-learner")]
 pub async fn add_learner(
-    app: Data<ExampleApp>,
-    req: Json<(ExampleNodeId, String)>,
+    app: Data<StorageNode>,
+    req: Json<(StorageNodeId, String)>,
 ) -> actix_web::Result<impl Responder> {
     let node_id = req.0 .0;
     let node = Node {
@@ -39,8 +39,8 @@ pub async fn add_learner(
 /// Changes specified learners to members, or remove members.
 #[post("/change-membership")]
 pub async fn change_membership(
-    app: Data<ExampleApp>,
-    req: Json<BTreeSet<ExampleNodeId>>,
+    app: Data<StorageNode>,
+    req: Json<BTreeSet<StorageNodeId>>,
 ) -> actix_web::Result<impl Responder> {
     let res = app.raft.change_membership(req.0, true, false).await;
     Ok(Json(res))
@@ -48,7 +48,7 @@ pub async fn change_membership(
 
 /// Initialize a single-node cluster.
 #[post("/init")]
-pub async fn init(app: Data<ExampleApp>) -> actix_web::Result<impl Responder> {
+pub async fn init(app: Data<StorageNode>) -> actix_web::Result<impl Responder> {
     let mut nodes = BTreeMap::new();
     nodes.insert(app.id, Node {
         addr: app.addr.clone(),
@@ -60,7 +60,7 @@ pub async fn init(app: Data<ExampleApp>) -> actix_web::Result<impl Responder> {
 
 /// Get the latest metrics of the cluster
 #[get("/metrics")]
-pub async fn metrics(app: Data<ExampleApp>) -> actix_web::Result<impl Responder> {
+pub async fn metrics(app: Data<StorageNode>) -> actix_web::Result<impl Responder> {
     let metrics = app.raft.metrics().borrow().clone();
 
     let res: Result<RaftMetrics<ExampleTypeConfig>, Infallible> = Ok(metrics);

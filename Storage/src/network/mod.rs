@@ -21,8 +21,8 @@ use openraft::RaftNetworkFactory;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
-use crate::{ARGS, ExampleNodeId, ExampleStore};
-use crate::app::ExampleApp;
+use crate::{ARGS, StorageNodeId, StorageNodeFileStore};
+use crate::app::StorageNode;
 use crate::ExampleTypeConfig;
 
 pub mod slice;
@@ -34,7 +34,7 @@ pub struct ExampleNetwork {}
 impl ExampleNetwork {
     pub async fn send_rpc<Req, Resp, Err>(
         &self,
-        target: ExampleNodeId,
+        target: StorageNodeId,
         target_node: Option<&Node>,
         uri: &str,
         req: Req,
@@ -62,7 +62,7 @@ impl ExampleNetwork {
 impl RaftNetworkFactory<ExampleTypeConfig> for ExampleNetwork {
     type Network = ExampleNetworkConnection;
 
-    async fn connect(&mut self, target: ExampleNodeId, node: Option<&Node>) -> Self::Network {
+    async fn connect(&mut self, target: StorageNodeId, node: Option<&Node>) -> Self::Network {
         ExampleNetworkConnection {
             owner: ExampleNetwork {},
             target,
@@ -73,7 +73,7 @@ impl RaftNetworkFactory<ExampleTypeConfig> for ExampleNetwork {
 
 pub struct ExampleNetworkConnection {
     owner: ExampleNetwork,
-    target: ExampleNodeId,
+    target: StorageNodeId,
     target_node: Option<Node>,
 }
 
@@ -82,7 +82,7 @@ impl RaftNetwork<ExampleTypeConfig> for ExampleNetworkConnection {
     async fn send_append_entries(
         &mut self,
         req: AppendEntriesRequest<ExampleTypeConfig>,
-    ) -> Result<AppendEntriesResponse<ExampleNodeId>, RPCError<ExampleTypeConfig, AppendEntriesError<ExampleNodeId>>>
+    ) -> Result<AppendEntriesResponse<StorageNodeId>, RPCError<ExampleTypeConfig, AppendEntriesError<StorageNodeId>>>
     {
         self.owner.send_rpc(self.target, self.target_node.as_ref(), "raft-append", req).await
     }
@@ -90,15 +90,15 @@ impl RaftNetwork<ExampleTypeConfig> for ExampleNetworkConnection {
     async fn send_install_snapshot(
         &mut self,
         req: InstallSnapshotRequest<ExampleTypeConfig>,
-    ) -> Result<InstallSnapshotResponse<ExampleNodeId>, RPCError<ExampleTypeConfig, InstallSnapshotError<ExampleNodeId>>>
+    ) -> Result<InstallSnapshotResponse<StorageNodeId>, RPCError<ExampleTypeConfig, InstallSnapshotError<StorageNodeId>>>
     {
         self.owner.send_rpc(self.target, self.target_node.as_ref(), "raft-snapshot", req).await
     }
 
     async fn send_vote(
         &mut self,
-        req: VoteRequest<ExampleNodeId>,
-    ) -> Result<VoteResponse<ExampleNodeId>, RPCError<ExampleTypeConfig, VoteError<ExampleNodeId>>> {
+        req: VoteRequest<StorageNodeId>,
+    ) -> Result<VoteResponse<StorageNodeId>, RPCError<ExampleTypeConfig, VoteError<StorageNodeId>>> {
         self.owner.send_rpc(self.target, self.target_node.as_ref(), "raft-vote", req).await
     }
 }
@@ -108,7 +108,7 @@ pub async fn init_httpserver() -> std::io::Result<()> {
     let config = Arc::new(Config::default().validate().unwrap());
 
     // Create a instance of where the Raft data will be stored.
-    let store = Arc::new(ExampleStore::default());
+    let store = Arc::new(StorageNodeFileStore::default());
 
     // Create the network layer that will connect and communicate the raft instances and
     // will be used in conjunction with the store created above.
@@ -119,7 +119,7 @@ pub async fn init_httpserver() -> std::io::Result<()> {
 
     // Create an application that will store all the instances created above, this will
     // be later used on the actix-web services.
-    let app = Data::new(ExampleApp {
+    let app = Data::new(StorageNode {
         id: ARGS.node_id,
         addr: ARGS.addr.clone(),
         raft,

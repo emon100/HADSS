@@ -7,21 +7,21 @@ use openraft::raft::InstallSnapshotRequest;
 use openraft::raft::VoteRequest;
 use web::Json;
 
-use crate::app::ExampleApp;
-use crate::ExampleNodeId;
+use crate::app::StorageNode;
+use crate::StorageNodeId;
 use crate::ExampleTypeConfig;
 
 // --- Raft communication
 
 #[post("/raft-vote")]
-pub async fn vote(app: Data<ExampleApp>, req: Json<VoteRequest<ExampleNodeId>>) -> actix_web::Result<impl Responder> {
+pub async fn vote(app: Data<StorageNode>, req: Json<VoteRequest<StorageNodeId>>) -> actix_web::Result<impl Responder> {
     let res = app.raft.vote(req.0).await;
     Ok(Json(res))
 }
 
 #[post("/raft-append")]
 pub async fn append(
-    app: Data<ExampleApp>,
+    app: Data<StorageNode>,
     req: Json<AppendEntriesRequest<ExampleTypeConfig>>,
 ) -> actix_web::Result<impl Responder> {
     let res = app.raft.append_entries(req.0).await;
@@ -30,7 +30,7 @@ pub async fn append(
 
 #[post("/raft-snapshot")]
 pub async fn snapshot(
-    app: Data<ExampleApp>,
+    app: Data<StorageNode>,
     req: Json<InstallSnapshotRequest<ExampleTypeConfig>>,
 ) -> actix_web::Result<impl Responder> {
     let res = app.raft.install_snapshot(req.0).await;

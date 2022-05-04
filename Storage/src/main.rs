@@ -12,18 +12,18 @@ use std::sync::Arc;
 use openraft::{Raft, StorageError};
 use openraft::testing::Suite;
 use crate::network::ExampleNetwork;
-use crate::store::ExampleStore;
-use crate::store::ExampleRequest;
-use crate::store::ExampleResponse;
+use crate::store::StorageNodeFileStore;
+use crate::store::StoreFileRequest;
+use crate::store::StoreFileResponse;
 
-pub type ExampleNodeId = u64;
+pub type StorageNodeId = u64;
 
 openraft::declare_raft_types!(
     /// Declare the type configuration for example K/V store.
-    pub ExampleTypeConfig: D = ExampleRequest, R = ExampleResponse, NodeId = ExampleNodeId
+    pub ExampleTypeConfig: D = StoreFileRequest, R = StoreFileResponse, NodeId = StorageNodeId
 );
 
-pub type ExampleRaft = Raft<ExampleTypeConfig, ExampleNetwork, Arc<ExampleStore>>;
+pub type ExampleRaft = Raft<ExampleTypeConfig, ExampleNetwork, Arc<StorageNodeFileStore>>;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -37,7 +37,7 @@ pub struct Args {
     #[clap(long, default_value_t = 10)]
     storage_directory_depth: usize,
     #[clap(short, long, default_value_t = 0)]
-    node_id: ExampleNodeId,
+    node_id: StorageNodeId,
 }
 
 pub static ARGS: SyncLazy<Args> = SyncLazy::new(|| {
@@ -46,12 +46,12 @@ pub static ARGS: SyncLazy<Args> = SyncLazy::new(|| {
     args
 });
 
-pub async fn new_async() -> Arc<ExampleStore> {
-    Arc::new(ExampleStore::default())
+pub async fn new_async() -> Arc<StorageNodeFileStore> {
+    Arc::new(StorageNodeFileStore::default())
 }
 
 #[test]
-pub fn test_mem_store() -> Result<(), StorageError<ExampleNodeId>> {
+pub fn test_mem_store() -> Result<(), StorageError<StorageNodeId>> {
     Suite::test_all(new_async)?;
     Ok(())
 }
