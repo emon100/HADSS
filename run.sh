@@ -1,6 +1,7 @@
 #! /bin/bash
 readonly GATEWAY_LISTEN_ADDR="0.0.0.0:9999"
-readonly MONITOR_ADDR="http://localhost:8500/v1/kv"
+readonly MONITOR_ADDR="http://localhost:10000"
+readonly MONITOR_LISTEN_ADDR="0.0.0.0:10000"
 
 trap stopall INT EXIT
 
@@ -38,6 +39,13 @@ gateway() {
 	/tmp/gateway -listenAddr $GATEWAY_LISTEN_ADDR -monitorAddr $MONITOR_ADDR &
 }
 
+monitor() {
+  pushd Monitor
+	go build -o /tmp/monitor
+	popd
+	/tmp/monitor -listenAddr $MONITOR_LISTEN_ADDR &
+}
+
 storage() {
   pushd Storage
   cargo build
@@ -56,10 +64,7 @@ stopall() {
   exit 0
 }
 
-runall(){
-  gateway
-  storage
-
+node_group_init() {
   rpc 21001/init '{}'
 
   echo "Server 1 is a leader now"
@@ -104,6 +109,13 @@ runall(){
   echo
   rpc 21001/metrics
   sleep 1
+}
+
+runall(){
+  gateway
+  monitor
+  storage
+  node_group_init
 
   curl http://localhost:9999/id/trycpp --upload-file ~/try.cpp
   curl http://localhost:9999/id/trycpp
