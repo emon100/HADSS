@@ -41,9 +41,9 @@ gateway() {
 storage() {
   pushd Storage
   cargo build
-	cargo run -- --port 21001 --node-id 1 --storage-location "/tmp/node1/storage" &
-	cargo run -- --port 21002 --node-id 2 --storage-location "/tmp/node2/storage" &
-	cargo run -- --port 21003 --node-id 3 --storage-location "/tmp/node3/storage" &
+	cargo run -- --port 21001 --node-id 1 --storage-location "/tmp/storage/node1" &
+	cargo run -- --port 21002 --node-id 2 --storage-location "/tmp/storage/node2" &
+	cargo run -- --port 21003 --node-id 3 --storage-location "/tmp/storage/node3" &
 	sleep 1
 	popd
 }

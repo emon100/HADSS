@@ -8,12 +8,12 @@ High Availability in HADSS stands for:
 1. No Single Point Failure.
 2. Responsive even when clusters scale up/down.
 
-HADSS can answer basic requests even when the entire Monitor Layer is down.
+HADSS can answer basic requests even when the entire Index Layer is down.
 
 ## Architecture
 HADSS consists of 3 layers:
 - Gateway Layer
-- Monitor Layer
+- Index Layer
 - Storage Layer
 
 Each Layer contain nodes in different regions, data centers or racks.
@@ -21,17 +21,18 @@ Each Layer contain nodes in different regions, data centers or racks.
 ### Gateway Layer
 Gateway Layer faces users' requests.
 
-Gateway Layer warps different kinds of storage services into RPCs to the Storage Layer and Monitor Layer.
+Gateway Layer warps different kinds of storage services into RPCs to the Storage Layer and Index Layer.
 e.g. The business logic for an Object Storage Service is usually on Gateway Layer.
 
 The best practice in production is to place **Load Balancers** before Gateway Nodes.
 
-### Monitor Layer
-Monitor Layer monitors Storage Layer status and performs recovery. e.g.
-- Monitor health of Storage Nodes
+### Index Layer
+Index Layer monitors Storage Layer status and performs recovery. e.g.
 - Monitor Storage Nodes cluster scales up/down
+- Monitor health of Storage Nodes
+- Provide Storage Nodes' information to other layers
 - Detect and recover data corruptions (Hard disk sometimes corrupts files)
-- Detect and recover Node Failures (Hard disk sometimes corrupts files)
+- Detect and recover Node Failures
 
 ### Storage Layer
 Storage Layer stores. It receives (Handler, ConsistencyPolicy, NodeStatusVersion(to be implemented)]) to store a file.
@@ -52,7 +53,7 @@ sequenceDiagram
     activate GatewayNode
     
     loop sometimes
-        GatewayNode->MonitorCluster: Syncing StorageClusters' nodestatus which contains all storage nodes infomation.
+        GatewayNode->IndexLayer: Syncing StorageClusters' nodestatus which contains all storage nodes infomation.
     end
     
     GatewayNode->>GatewayNode: Calculates metadata and determines StorageNode used to store data.
@@ -84,7 +85,7 @@ sequenceDiagram
     activate GatewayNode
     
     loop sometimes
-        GatewayNode->MonitorCluster: Syncing StorageCluster's states.
+        GatewayNode->IndexLayer: Syncing StorageCluster's states.
     end
     
     GatewayNode->>GatewayNode: Calculating metadata's position. 
@@ -107,35 +108,34 @@ The System's sequence diagram when clusters scale up/down.
 ```mermaid
 sequenceDiagram
     autonumber
-    participant MonitorCluster
+    participant IndexLayer
     participant StorageNode..N 
     
-    StorageNode..N->MonitorCluster: Heartbeat from node1, add a new StorageNode
-    StorageNode..N->MonitorCluster: Heartbeat from node2, add a new StorageNode
-    StorageNode..N->MonitorCluster: Heartbeat from node3, add a new StorageNode
+    StorageNode..N->IndexLayer: Heartbeat from node1, add a new StorageNode
+    StorageNode..N->IndexLayer: Heartbeat from node2, add a new StorageNode
+    StorageNode..N->IndexLayer: Heartbeat from node3, add a new StorageNode
     
-    Note right of MonitorCluster: MonitorCluster collects healthy StorageNodes
-    MonitorCluster->>MonitorCluster: Calculating new nodestatus and data distribution.
-    MonitorCluster->>StorageNode..N: Ask node1,2,3 to join group1 and do data re-distribution.
-    StorageNode..N-->>MonitorCluster: node1,2,3 Ready
-    MonitorCluster->>MonitorCluster: Put the new data distribution into uncommited version of node status.
+    Note right of IndexLayer: IndexLayer collects healthy StorageNodes
+    IndexLayer->>IndexLayer: Calculating new nodestatus and data distribution.
+    IndexLayer->>StorageNode..N: Ask node1,2,3 to join group1 and do data re-distribution.
+    StorageNode..N-->>IndexLayer: node1,2,3 Ready
+    IndexLayer->>IndexLayer: Put the new data distribution into uncommited version of node status.
     
-    StorageNode..N->MonitorCluster: Heartbeat from node1, leader of group 1, almost full, need data re-distribution
-    StorageNode..N->MonitorCluster: Heartbeat from node4, add a new StorageNode
-    StorageNode..N->MonitorCluster: Heartbeat from node5, add a new StorageNode
-    StorageNode..N->MonitorCluster: Heartbeat from node6, add a new StorageNode
+    StorageNode..N->IndexLayer: Heartbeat from node1, leader of group 1, almost full, need data re-distribution
+    StorageNode..N->IndexLayer: Heartbeat from node4, add a new StorageNode
+    StorageNode..N->IndexLayer: Heartbeat from node5, add a new StorageNode
+    StorageNode..N->IndexLayer: Heartbeat from node6, add a new StorageNode
     
-    Note right of MonitorCluster: MonitorCluster collects healthy StorageNodes
-    MonitorCluster->>MonitorCluster: Calculating new nodestatus and data distribution.
-    MonitorCluster->>StorageNode..N: Ask group1 to shrink data range and node4,5,6 to join group2 and extend data range.
-    StorageNode..N-->>MonitorCluster: node1,2,3,4,5,6 Ready
-    MonitorCluster->>MonitorCluster: Put the new data distribution into uncommited version of nodestatus.
+    Note right of IndexLayer: IndexLayer collects healthy StorageNodes
+    IndexLayer->>IndexLayer: Calculating new nodestatus and data distribution.
+    IndexLayer->>StorageNode..N: Ask group1 to shrink data range and node4,5,6 to join group2 and extend data range.
+    StorageNode..N-->>IndexLayer: node1,2,3,4,5,6 Ready
+    IndexLayer->>IndexLayer: Put the new data distribution into uncommited version of nodestatus.
     
     loop
-        MonitorCluster->>MonitorCluster: When the last stable nodestatus expires, replace it with uncommitted version.
+        IndexLayer->>IndexLayer: When the last stable nodestatus expires, replace it with uncommitted version.
     end
 ```
-
 
 Storage Node Clusters scale up or down don't matter.
 Storage Nodes' data re-balancing matters.
@@ -144,4 +144,11 @@ Why: if adding nodes or losing nodes won't change data distribution, then it doe
 Only data re-balancing matters, because it will change data distribution.
 
 ## Testing
+### E2E test
+Execute `run.sh` to testrun the whole system.
+
+### Integration test
+StorageConnector has Integration tests in `connector_test.go` to verify the interface inplementation correctness.
+
 ### Unit test
+StorageConnector has unit tests in `connector_test.go` to verify the right behaviour.
