@@ -38,9 +38,7 @@ pub fn store_slice(id: &str, body: &Vec<u8>) -> io::Result<()> {
     let (directory, filename) = split_id_into_directory_and_filename(id, storage_directory_depth, 2);
 
     let full_directory = format!("{}/{}", ARGS.storage_location, directory);
-    if let Err(error) = fs::create_dir_all(&full_directory) {
-        return Err(error);
-    }
+    fs::create_dir_all(&full_directory)?;
 
     let full_path = format!("{}/{}", full_directory, filename);
     println!("{}", full_path);
