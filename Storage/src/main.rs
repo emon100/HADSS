@@ -4,13 +4,13 @@
 mod app;
 mod network;
 mod store;
+pub mod testing;
 
 use clap::Parser;
 use network::init_httpserver;
 use std::lazy::SyncLazy;
 use std::sync::Arc;
-use openraft::{Raft, StorageError};
-use openraft::testing::Suite;
+use openraft::{Raft};
 use crate::network::ExampleNetwork;
 use crate::store::StorageNodeFileStore;
 use crate::store::StoreFileRequest;
@@ -20,10 +20,10 @@ pub type StorageNodeId = u64;
 
 openraft::declare_raft_types!(
     /// Declare the type configuration for example K/V store.
-    pub ExampleTypeConfig: D = StoreFileRequest, R = StoreFileResponse, NodeId = StorageNodeId
+    pub StorageRaftTypeConfig: D = StoreFileRequest, R = StoreFileResponse, NodeId = StorageNodeId
 );
 
-pub type ExampleRaft = Raft<ExampleTypeConfig, ExampleNetwork, Arc<StorageNodeFileStore>>;
+pub type ExampleRaft = Raft<StorageRaftTypeConfig, ExampleNetwork, Arc<StorageNodeFileStore>>;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -45,16 +45,6 @@ pub static ARGS: SyncLazy<Args> = SyncLazy::new(|| {
     args.storage_location = args.storage_location.trim_end_matches("/").parse().unwrap();
     args
 });
-
-pub async fn new_async() -> Arc<StorageNodeFileStore> {
-    Arc::new(StorageNodeFileStore::default())
-}
-
-#[test]
-pub fn test_mem_store() -> Result<(), StorageError<StorageNodeId>> {
-    Suite::test_all(new_async)?;
-    Ok(())
-}
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {

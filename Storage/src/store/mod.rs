@@ -1,11 +1,11 @@
-use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::io::Cursor;
-use std::ops::RangeBounds;
+use std::ops::{Bound, RangeBounds};
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use openraft::AnyError;
+use actix_web::cookie::Expiration::DateTime;
+use openraft::{AnyError};
 use openraft::async_trait::async_trait;
 use openraft::EffectiveMembership;
 use openraft::Entry;
@@ -23,12 +23,14 @@ use openraft::storage::Snapshot;
 use openraft::StorageError;
 use openraft::StorageIOError;
 use openraft::Vote;
+use rand::Rng;
 use serde::Deserialize;
 use serde::Serialize;
+use sled::{Db, IVec};
 use tokio::sync::RwLock;
 
-use crate::StorageNodeId;
-use crate::ExampleTypeConfig;
+use crate::{ARGS, StorageNodeId};
+use crate::StorageRaftTypeConfig;
 
 pub mod fs_io;
 
@@ -78,29 +80,90 @@ pub struct ExampleStateMachine {
     pub data: Vec<String>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct StorageNodeFileStore {
-    last_purged_log_id: RwLock<Option<LogId<StorageNodeId>>>,
+    pub last_purged_log_id: RwLock<Option<LogId<StorageNodeId>>>,
+
+    /// The sled db for log and raft_state.
+    /// state machine is stored in another sled db since it contains user data and needs to be export/import as a whole.
+    /// This db is also used to generate a locally unique id.
+    /// Currently the id is used to create a unique snapshot id.
 
     /// The Raft log.
-    log: RwLock<BTreeMap<u64, Entry<ExampleTypeConfig>>>,
+    pub log: sled::Tree,//RwLock<BTreeMap<u64, Entry<StorageRaftTypeConfig>>>,
+
+    //TODO: pub log_meta: sled::Tree, //For raft state
 
     /// The Raft state machine.
     pub state_machine: RwLock<ExampleStateMachine>,
 
     /// The current granted vote.
-    vote: RwLock<Option<Vote<StorageNodeId>>>,
+    pub vote: RwLock<Option<Vote<StorageNodeId>>>,
 
-    snapshot_idx: Arc<Mutex<u64>>,
+    pub snapshot_idx: Arc<Mutex<u64>>,
 
-    current_snapshot: RwLock<Option<StorageNodeStoreSnapshot>>,
+    pub current_snapshot: RwLock<Option<StorageNodeStoreSnapshot>>,
+
+    pub id: StorageNodeId,
+}
+
+fn get_sled_db() -> Db {
+    sled::open("try_my_db").unwrap()
+}
+
+
+impl StorageNodeFileStore {
+    pub fn mock_state_open(
+        open: Option<()>,
+        create: Option<()>,
+    ) -> u64 {
+        let (id, _is_open) = match (open, create) {
+            (Some(_), Some(_)) => (ARGS.node_id, false),
+            (Some(_), None) => {
+                panic!("Err(MetaError::MetaStoreNotFound)");
+            }
+            (None, Some(_)) => (ARGS.node_id, false),
+            (None, None) => panic!("no open no create"),
+        };
+
+        id
+    }
+    pub fn open_create(
+        open: Option<()>,
+        create: Option<()>,
+    ) -> StorageNodeFileStore {
+        tracing::info!("open: {:?}, create: {:?}", open, create);
+
+        let db = get_sled_db();
+
+        let raft_state_id = StorageNodeFileStore::mock_state_open(open, create);
+
+        let mut rng = rand::thread_rng();
+        let log = db.open_tree(format!("trytry{}", rng.gen::<u32>())).unwrap();
+
+        let current_snapshot = RwLock::new(None);
+
+        StorageNodeFileStore {
+            last_purged_log_id: Default::default(),
+            id: raft_state_id,
+            log,
+            state_machine: Default::default(),
+            vote: Default::default(),
+            snapshot_idx: Arc::new(Mutex::new(0)),
+            current_snapshot,
+        }
+    }
 }
 
 #[async_trait]
-impl RaftLogReader<ExampleTypeConfig> for Arc<StorageNodeFileStore> {
-    async fn get_log_state(&mut self) -> Result<LogState<ExampleTypeConfig>, StorageError<StorageNodeId>> {
-        let log = self.log.read().await;
-        let last = log.iter().rev().next().map(|(_, ent)| ent.log_id);
+impl RaftLogReader<StorageRaftTypeConfig> for Arc<StorageNodeFileStore> {
+    async fn get_log_state(&mut self) -> Result<LogState<StorageRaftTypeConfig>, StorageError<StorageNodeId>> {
+        let log = &self.log;
+        let last = log.iter()
+                      .rev()
+                      .next()
+                      .map(|res| res.unwrap()).map(|(_, val)|
+            serde_json::from_slice::<Entry<StorageRaftTypeConfig>>(&*val).unwrap().log_id);
 
         let last_purged = *self.last_purged_log_id.read().await;
 
@@ -115,22 +178,43 @@ impl RaftLogReader<ExampleTypeConfig> for Arc<StorageNodeFileStore> {
         })
     }
 
+
     async fn try_get_log_entries<RB: RangeBounds<u64> + Clone + Debug + Send + Sync>(
         &mut self,
         range: RB,
-    ) -> Result<Vec<Entry<ExampleTypeConfig>>, StorageError<StorageNodeId>> {
-        let log = self.log.read().await;
-        let response = log.range(range.clone()).map(|(_, val)| val.clone()).collect::<Vec<_>>();
+    ) -> Result<Vec<Entry<StorageRaftTypeConfig>>, StorageError<StorageNodeId>> {
+        let log = &self.log;
+        let response = log.range(transform_range_bound(range))
+                          .map(|res| res.unwrap())
+                          .map(|(_, val)|
+                              serde_json::from_slice::<Entry<StorageRaftTypeConfig>>(&*val).unwrap())
+                          .collect();
+
         Ok(response)
     }
 }
 
+fn transform_range_bound<RB: RangeBounds<u64> + Clone + Debug + Send + Sync>(range: RB) -> (Bound<IVec>, Bound<IVec>) {
+    (serialize_bound(&range.start_bound()), serialize_bound(&range.end_bound()))
+}
+
+
+fn serialize_bound(
+    v: &Bound<&u64>,
+) -> Bound<IVec> {
+    match v {
+        Bound::Included(v) => Bound::Included(IVec::from(&v.to_be_bytes())),
+        Bound::Excluded(v) => Bound::Excluded(IVec::from(&v.to_be_bytes())),
+        Bound::Unbounded => Bound::Unbounded
+    }
+}
+
 #[async_trait]
-impl RaftSnapshotBuilder<ExampleTypeConfig, Cursor<Vec<u8>>> for Arc<StorageNodeFileStore> {
+impl RaftSnapshotBuilder<StorageRaftTypeConfig, Cursor<Vec<u8>>> for Arc<StorageNodeFileStore> {
     #[tracing::instrument(level = "trace", skip(self))]
     async fn build_snapshot(
         &mut self,
-    ) -> Result<Snapshot<ExampleTypeConfig, Cursor<Vec<u8>>>, StorageError<StorageNodeId>> {
+    ) -> Result<Snapshot<StorageRaftTypeConfig, Cursor<Vec<u8>>>, StorageError<StorageNodeId>> {
         let (data, last_applied_log);
 
         {
@@ -183,7 +267,7 @@ impl RaftSnapshotBuilder<ExampleTypeConfig, Cursor<Vec<u8>>> for Arc<StorageNode
 }
 
 #[async_trait]
-impl RaftStorage<ExampleTypeConfig> for Arc<StorageNodeFileStore> {
+impl RaftStorage<StorageRaftTypeConfig> for Arc<StorageNodeFileStore> {
     type SnapshotData = Cursor<Vec<u8>>;
     type LogReader = Self;
     type SnapshotBuilder = Self;
@@ -206,11 +290,11 @@ impl RaftStorage<ExampleTypeConfig> for Arc<StorageNodeFileStore> {
     #[tracing::instrument(level = "trace", skip(self, entries))]
     async fn append_to_log(
         &mut self,
-        entries: &[&Entry<ExampleTypeConfig>],
+        entries: &[&Entry<StorageRaftTypeConfig>],
     ) -> Result<(), StorageError<StorageNodeId>> {
-        let mut log = self.log.write().await;
+        let log = &self.log;
         for entry in entries {
-            log.insert(entry.log_id.index, (*entry).clone());
+            log.insert(entry.log_id.index.to_be_bytes(), IVec::from(serde_json::to_vec(&*entry).unwrap()));
         }
         Ok(())
     }
@@ -222,8 +306,10 @@ impl RaftStorage<ExampleTypeConfig> for Arc<StorageNodeFileStore> {
     ) -> Result<(), StorageError<StorageNodeId>> {
         tracing::debug!("delete_log: [{:?}, +oo)", log_id);
 
-        let mut log = self.log.write().await;
-        let keys = log.range(log_id.index..).map(|(k, _v)| *k).collect::<Vec<_>>();
+        let log = &self.log;
+        let keys = log.range(transform_range_bound(log_id.index..))
+                      .map(|res| res.unwrap())
+                      .map(|(k, _v)| k); //TODO Why originally used collect instead of the iter.
         for key in keys {
             log.remove(&key);
         }
@@ -242,9 +328,11 @@ impl RaftStorage<ExampleTypeConfig> for Arc<StorageNodeFileStore> {
         }
 
         {
-            let mut log = self.log.write().await;
+            let log = &self.log;
 
-            let keys = log.range(..=log_id.index).map(|(k, _v)| *k).collect::<Vec<_>>();
+            let keys = log.range(transform_range_bound(..=log_id.index))
+                          .map(|res| res.unwrap())
+                          .map(|(k, _)| k);
             for key in keys {
                 log.remove(&key);
             }
@@ -263,7 +351,7 @@ impl RaftStorage<ExampleTypeConfig> for Arc<StorageNodeFileStore> {
     #[tracing::instrument(level = "trace", skip(self, entries))]
     async fn apply_to_state_machine(
         &mut self,
-        entries: &[&Entry<ExampleTypeConfig>],
+        entries: &[&Entry<StorageRaftTypeConfig>],
     ) -> Result<Vec<StoreFileResponse>, StorageError<StorageNodeId>> {
         let mut res = Vec::with_capacity(entries.len());
 
@@ -308,7 +396,7 @@ impl RaftStorage<ExampleTypeConfig> for Arc<StorageNodeFileStore> {
         &mut self,
         meta: &SnapshotMeta<StorageNodeId>,
         snapshot: Box<Self::SnapshotData>,
-    ) -> Result<StateMachineChanges<ExampleTypeConfig>, StorageError<StorageNodeId>> {
+    ) -> Result<StateMachineChanges<StorageRaftTypeConfig>, StorageError<StorageNodeId>> {
         tracing::info!(
             { snapshot_size = snapshot.get_ref().len() },
             "decoding snapshot for installation"
@@ -345,7 +433,7 @@ impl RaftStorage<ExampleTypeConfig> for Arc<StorageNodeFileStore> {
     #[tracing::instrument(level = "trace", skip(self))]
     async fn get_current_snapshot(
         &mut self,
-    ) -> Result<Option<Snapshot<ExampleTypeConfig, Self::SnapshotData>>, StorageError<StorageNodeId>> {
+    ) -> Result<Option<Snapshot<StorageRaftTypeConfig, Self::SnapshotData>>, StorageError<StorageNodeId>> {
         match &*self.current_snapshot.read().await {
             Some(snapshot) => {
                 let data = snapshot.data.clone();

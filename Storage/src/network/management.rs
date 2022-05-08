@@ -13,7 +13,7 @@ use web::Json;
 
 use crate::app::StorageNode;
 use crate::StorageNodeId;
-use crate::ExampleTypeConfig;
+use crate::StorageRaftTypeConfig;
 
 // --- Cluster management
 
@@ -63,7 +63,7 @@ pub async fn init(app: Data<StorageNode>) -> actix_web::Result<impl Responder> {
 pub async fn metrics(app: Data<StorageNode>) -> actix_web::Result<impl Responder> {
     let metrics = app.raft.metrics().borrow().clone();
 
-    let res: Result<RaftMetrics<ExampleTypeConfig>, Infallible> = Ok(metrics);
+    let res: Result<RaftMetrics<StorageRaftTypeConfig>, Infallible> = Ok(metrics);
     Ok(Json(res))
 }
 
