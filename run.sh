@@ -69,30 +69,21 @@ node_group_init() {
 
   echo "Server 1 is a leader now"
 
-  sleep 2
-
-
   echo "Get metrics from the leader"
   sleep 2
   echo
   rpc 21001/metrics
-  sleep 1
-
 
   echo "Adding node 2 and node 3 as learners, to receive log from leader node 1"
 
-  sleep 1
-  echo
   rpc 21001/add-learner       '[2, "127.0.0.1:21002"]'
   echo "Node 2 added as leaner"
   sleep 1
   echo
   rpc 21001/add-learner       '[3, "127.0.0.1:21003"]'
   echo "Node 3 added as leaner"
-  sleep 1
 
   echo "Get metrics from the leader, after adding 2 learners"
-  sleep 2
   echo
   rpc 21001/metrics
   sleep 1
@@ -100,18 +91,15 @@ node_group_init() {
   echo "Changing membership from [1] to 3 nodes cluster: [1, 2, 3]"
   echo
   rpc 21001/change-membership '[1, 2, 3]'
-  sleep 1
   echo "Membership changed"
-  sleep 1
 
   echo "Get metrics from the leader again"
-  sleep 1
   echo
   rpc 21001/metrics
   sleep 1
 }
 
-runall(){
+runall() {
   gateway
   monitor
   storage
