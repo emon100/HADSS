@@ -4,7 +4,6 @@ use std::ops::{Bound, RangeBounds};
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use actix_web::cookie::Expiration::DateTime;
 use openraft::{AnyError};
 use openraft::async_trait::async_trait;
 use openraft::EffectiveMembership;
@@ -33,6 +32,8 @@ use crate::{ARGS, StorageNodeId};
 use crate::StorageRaftTypeConfig;
 
 pub mod fs_io;
+
+//TODO: try delete all unwraps
 
 /**
  * Here you will set the types of request that will interact with the raft nodes.
@@ -70,7 +71,7 @@ pub struct StorageNodeStoreSnapshot {
  * value as String, but you could set any type of value that has the serialization impl.
  */
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
-pub struct ExampleStateMachine {
+pub struct StorageNodeStoreStateMachine {
     pub last_applied_log: Option<LogId<StorageNodeId>>,
 
     // TODO: it should not be Option.
@@ -89,13 +90,15 @@ pub struct StorageNodeFileStore {
     /// This db is also used to generate a locally unique id.
     /// Currently the id is used to create a unique snapshot id.
 
+    //In raft, only three things have to be persisted: logs, current_term, voted_for.
+
     /// The Raft log.
     pub log: sled::Tree,//RwLock<BTreeMap<u64, Entry<StorageRaftTypeConfig>>>,
 
     //TODO: pub log_meta: sled::Tree, //For raft state
 
     /// The Raft state machine.
-    pub state_machine: RwLock<ExampleStateMachine>,
+    pub state_machine: RwLock<StorageNodeStoreStateMachine>,
 
     /// The current granted vote.
     pub vote: RwLock<Option<Vote<StorageNodeId>>>,
@@ -409,7 +412,7 @@ impl RaftStorage<StorageRaftTypeConfig> for Arc<StorageNodeFileStore> {
 
         // Update the state machine.
         {
-            let updated_state_machine: ExampleStateMachine =
+            let updated_state_machine: StorageNodeStoreStateMachine =
                 serde_json::from_slice(&new_snapshot.data).map_err(|e| {
                     StorageIOError::new(
                         ErrorSubject::Snapshot(new_snapshot.meta.clone()),
