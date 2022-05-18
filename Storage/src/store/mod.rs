@@ -217,8 +217,8 @@ impl RaftSnapshotBuilder<StorageRaftTypeConfig, Cursor<Vec<u8>>> for Arc<Storage
     #[tracing::instrument(level = "trace", skip(self))]
     async fn build_snapshot(
         &mut self,
-    ) -> Result<Snapshot<StorageRaftTypeConfig, Cursor<Vec<u8>>>, StorageError<StorageNodeId>> {
-        let (data, last_applied_log);
+    ) -> Result<Snapshot<StorageNodeId, Cursor<Vec<u8>>>, StorageError<StorageNodeId>> {
+        let (data, last_applied_log, last_membership);
 
         {
             // Serialize the data of the state machine.
@@ -227,6 +227,7 @@ impl RaftSnapshotBuilder<StorageRaftTypeConfig, Cursor<Vec<u8>>> for Arc<Storage
                 .map_err(|e| StorageIOError::new(ErrorSubject::StateMachine, ErrorVerb::Read, AnyError::new(&e)))?;
 
             last_applied_log = state_machine.last_applied_log;
+            last_membership = state_machine.last_membership.clone();
         }
 
         let last_applied_log = match last_applied_log {
@@ -249,6 +250,7 @@ impl RaftSnapshotBuilder<StorageRaftTypeConfig, Cursor<Vec<u8>>> for Arc<Storage
 
         let meta = SnapshotMeta {
             last_log_id: last_applied_log,
+            last_membership ,
             snapshot_id,
         };
 
@@ -436,7 +438,7 @@ impl RaftStorage<StorageRaftTypeConfig> for Arc<StorageNodeFileStore> {
     #[tracing::instrument(level = "trace", skip(self))]
     async fn get_current_snapshot(
         &mut self,
-    ) -> Result<Option<Snapshot<StorageRaftTypeConfig, Self::SnapshotData>>, StorageError<StorageNodeId>> {
+    ) -> Result<Option<Snapshot<StorageNodeId, Self::SnapshotData>>, StorageError<StorageNodeId>> {
         match &*self.current_snapshot.read().await {
             Some(snapshot) => {
                 let data = snapshot.data.clone();

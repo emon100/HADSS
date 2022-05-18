@@ -38,7 +38,7 @@ impl ExampleNetwork {
         target_node: Option<&Node>,
         uri: &str,
         req: Req,
-    ) -> Result<Resp, RPCError<StorageRaftTypeConfig, Err>>
+    ) -> Result<Resp, RPCError<StorageNodeId, Err>>
     where
         Req: Serialize,
         Err: std::error::Error + DeserializeOwned,
@@ -82,7 +82,7 @@ impl RaftNetwork<StorageRaftTypeConfig> for ExampleNetworkConnection {
     async fn send_append_entries(
         &mut self,
         req: AppendEntriesRequest<StorageRaftTypeConfig>,
-    ) -> Result<AppendEntriesResponse<StorageNodeId>, RPCError<StorageRaftTypeConfig, AppendEntriesError<StorageNodeId>>>
+    ) -> Result<AppendEntriesResponse<StorageNodeId>, RPCError<StorageNodeId, AppendEntriesError<StorageNodeId>>>
     {
         self.owner.send_rpc(self.target, self.target_node.as_ref(), "raft-append", req).await
     }
@@ -90,7 +90,7 @@ impl RaftNetwork<StorageRaftTypeConfig> for ExampleNetworkConnection {
     async fn send_install_snapshot(
         &mut self,
         req: InstallSnapshotRequest<StorageRaftTypeConfig>,
-    ) -> Result<InstallSnapshotResponse<StorageNodeId>, RPCError<StorageRaftTypeConfig, InstallSnapshotError<StorageNodeId>>>
+    ) -> Result<InstallSnapshotResponse<StorageNodeId>, RPCError<StorageNodeId, InstallSnapshotError<StorageNodeId>>>
     {
         self.owner.send_rpc(self.target, self.target_node.as_ref(), "raft-snapshot", req).await
     }
@@ -98,7 +98,7 @@ impl RaftNetwork<StorageRaftTypeConfig> for ExampleNetworkConnection {
     async fn send_vote(
         &mut self,
         req: VoteRequest<StorageNodeId>,
-    ) -> Result<VoteResponse<StorageNodeId>, RPCError<StorageRaftTypeConfig, VoteError<StorageNodeId>>> {
+    ) -> Result<VoteResponse<StorageNodeId>, RPCError<StorageNodeId, VoteError<StorageNodeId>>> {
         self.owner.send_rpc(self.target, self.target_node.as_ref(), "raft-vote", req).await
     }
 }
