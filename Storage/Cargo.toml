@@ -10,7 +10,7 @@ actix-web = "4"
 async-trait = "0.1.36"
 clap = { version = "3.1.6", features = ["derive", "env"] }
 derive_more = "0.99.16"
-openraft = { git = "https://github.com/datafuselabs/openraft", rev = "2262c79f5195307402e7a0994771b4152c0d10b2" }
+openraft = { git = "https://github.com/datafuselabs/openraft", rev = "095c1ce821146df49278e592036dc12f353e716a" }
 env_logger = "0.9.0"
 reqwest = { version = "0.11.9", features = ["json"] }
 serde = { version="1.0.114", features=["derive"] }
