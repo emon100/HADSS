@@ -1,9 +1,11 @@
 use actix_web::{get, HttpRequest, HttpResponse, put, Responder, web};
+use actix_web::http::header;
 use openraft::EntryPayload;
+use openraft::error::ClientWriteError;
 use openraft::raft::ClientWriteRequest;
 
 use crate::app::StorageNode;
-use crate::StoreFileRequest;
+use crate::{StorageNodeId, StoreFileRequest};
 use crate::store::fs_io::read_slice;
 
 //TODO: implement consistent read
@@ -29,10 +31,22 @@ pub async fn put_slice(app: web::Data<StorageNode>, req: HttpRequest, body: web:
 
     let request = ClientWriteRequest::new(EntryPayload::Normal(StoreFileRequest::Set { id: id, value: body.to_vec() }));
     let response = app.raft.client_write(request).await;
-    match response {
-        Err(..) => HttpResponse::InternalServerError()
-            .json(response),
+    match &response {
+        Err(e) => {
+            match e {
+                ClientWriteError::ForwardToLeader(nid) => {
+                    let addr = &nid.leader_node.as_ref().unwrap().addr;
+                    HttpResponse::TemporaryRedirect()
+                        .insert_header((header::LOCATION,format!("http://{}/slice/id", addr)))
+                        .json(&response)
+                }
+                _ => {
+                    HttpResponse::InternalServerError()
+                        .json(&response)
+                }
+            }
+        }
         Ok(..) => HttpResponse::Ok()
-            .json(response)
+            .json(&response)
     }
 }
