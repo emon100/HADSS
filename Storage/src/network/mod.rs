@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use actix_web::{App, HttpServer};
+use actix_web::{App, HttpServer, web};
 use actix_web::web::Data;
 use async_trait::async_trait;
 use openraft::{Config, Node, Raft};
@@ -138,7 +138,7 @@ pub async fn init_httpserver() -> std::io::Result<()> {
     // be later used on the actix-web services.
     let app = Data::new(StorageNode {
         id: ARGS.node_id,
-        addr: ARGS.addr.clone(),
+        addr: "127.0.0.1:21001".to_string(),//TODO not 0.0.0.0
         raft,
         store,
         config,
@@ -146,6 +146,7 @@ pub async fn init_httpserver() -> std::io::Result<()> {
     HttpServer::new(move || {
         App::new()
             .app_data(app.clone())
+            .app_data(web::PayloadConfig::new(ARGS.payload_size))
             // raft internal RPC
             .service(raft::append)
             .service(raft::snapshot)

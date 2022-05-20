@@ -29,15 +29,15 @@ pub async fn put_slice(app: web::Data<StorageNode>, req: HttpRequest, body: web:
         return HttpResponse::NotAcceptable().body("ID should be 64 bytes long ascii.");
     }
 
-    let request = ClientWriteRequest::new(EntryPayload::Normal(StoreFileRequest::Set { id: id, value: body.to_vec() }));
+    let request = ClientWriteRequest::new(EntryPayload::Normal(StoreFileRequest::Set { id: id.clone(), value: body.to_vec() }));
     let response = app.raft.client_write(request).await;
     match &response {
         Err(e) => {
             match e {
                 ClientWriteError::ForwardToLeader(nid) => {
-                    let addr = &nid.leader_node.as_ref().unwrap().addr;
+                    let addr = nid.clone().leader_node.unwrap().addr;
                     HttpResponse::TemporaryRedirect()
-                        .insert_header((header::LOCATION,format!("http://{}/slice/id", addr)))
+                        .insert_header((header::LOCATION,format!("http://{}/slice/{}", addr, id)))
                         .json(&response)
                 }
                 _ => {

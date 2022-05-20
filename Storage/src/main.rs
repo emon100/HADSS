@@ -38,6 +38,8 @@ pub struct Args {
     storage_directory_depth: usize,
     #[clap(short, long, default_value_t = 0)]
     node_id: StorageNodeId,
+    #[clap(long, default_value_t = 1<<30)]
+    payload_size: usize,
 }
 
 pub static ARGS: SyncLazy<Args> = SyncLazy::new(|| {

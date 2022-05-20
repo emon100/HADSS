@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 use std::io::Cursor;
-use std::ops::{Bound, RangeBounds};
+use std::ops::{Bound, Index, RangeBounds};
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -23,7 +23,7 @@ use openraft::StorageError;
 use openraft::StorageIOError;
 use openraft::Vote;
 use rand::Rng;
-use serde::Deserialize;
+use serde::{Deserialize, ser};
 use serde::Serialize;
 use sled::{Db, IVec};
 use tokio::sync::RwLock;
@@ -83,7 +83,7 @@ pub struct StorageNodeStoreStateMachine {
 
 #[derive(Debug)]
 pub struct StorageNodeFileStore {
-    pub last_purged_log_id: RwLock<Option<LogId<StorageNodeId>>>,
+    // pub last_purged_log_id: RwLock<Option<LogId<StorageNodeId>>>,
 
     /// The sled db for log and raft_state.
     /// state machine is stored in another sled db since it contains user data and needs to be export/import as a whole.
@@ -94,43 +94,25 @@ pub struct StorageNodeFileStore {
 
     /// The Raft log.
     pub log: sled::Tree,//RwLock<BTreeMap<u64, Entry<StorageRaftTypeConfig>>>,
-
-    //TODO: pub log_meta: sled::Tree, //For raft state
+    pub meta: sled::Tree, //voted_for and current_term
 
     /// The Raft state machine.
     pub state_machine: RwLock<StorageNodeStoreStateMachine>,
 
     /// The current granted vote.
-    pub vote: RwLock<Option<Vote<StorageNodeId>>>,
+    //pub voted_for: RwLock<Option<Vote<StorageNodeId>>>,// alternatived by meta
 
-    pub snapshot_idx: Arc<Mutex<u64>>,
+    pub snapshot_idx: Arc<Mutex<u64>>, //TODO: check this cache
 
-    pub current_snapshot: RwLock<Option<StorageNodeStoreSnapshot>>,
-
-    pub id: StorageNodeId,
+    pub current_snapshot: RwLock<Option<StorageNodeStoreSnapshot>>,//TODO: check should cache or not
 }
 
 fn get_sled_db() -> Db {
-    sled::open("try_my_db").unwrap()
+    sled::open(format!("{}/{}",ARGS.storage_location, "database")).unwrap()
 }
 
 
 impl StorageNodeFileStore {
-    pub fn mock_state_open(
-        open: Option<()>,
-        create: Option<()>,
-    ) -> u64 {
-        let (id, _is_open) = match (open, create) {
-            (Some(_), Some(_)) => (ARGS.node_id, false),
-            (Some(_), None) => {
-                panic!("Err(MetaError::MetaStoreNotFound)");
-            }
-            (None, Some(_)) => (ARGS.node_id, false),
-            (None, None) => panic!("no open no create"),
-        };
-
-        id
-    }
     pub fn open_create(
         open: Option<()>,
         create: Option<()>,
@@ -139,22 +121,33 @@ impl StorageNodeFileStore {
 
         let db = get_sled_db();
 
-        let raft_state_id = StorageNodeFileStore::mock_state_open(open, create);
 
-        let mut rng = rand::thread_rng();
-        let log = db.open_tree(format!("trytry{}", rng.gen::<u32>())).unwrap();
+        let log = db.open_tree(format!("trylog")).unwrap();
+        let meta = db.open_tree(format!("trymeta")).unwrap();
 
         let current_snapshot = RwLock::new(None);
 
         StorageNodeFileStore {
-            last_purged_log_id: Default::default(),
-            id: raft_state_id,
+            //last_purged_log_id: Default::default(),
+            //id: raft_state_id,
             log,
+            meta,
             state_machine: Default::default(),
-            vote: Default::default(),
+            //voted_for: Default::default(),
             snapshot_idx: Arc::new(Mutex::new(0)),
             current_snapshot,
         }
+    }
+
+    fn get_last_purged_log_id(&self) -> Option<LogId<StorageNodeId>>{
+        match self.meta.get(b"last-purged").unwrap() {
+            None => None,
+            Some(res) => serde_json::from_slice::<Option<LogId<StorageNodeId>>>(&*res).unwrap()
+        }
+    }
+
+    fn set_last_purged_log_id(&self, id: &LogId<StorageNodeId>) {
+        self.meta.insert(b"last-purged", IVec::from(serde_json::to_vec(id).unwrap()));
     }
 }
 
@@ -168,7 +161,7 @@ impl RaftLogReader<StorageRaftTypeConfig> for Arc<StorageNodeFileStore> {
                       .map(|res| res.unwrap()).map(|(_, val)|
             serde_json::from_slice::<Entry<StorageRaftTypeConfig>>(&*val).unwrap().log_id);
 
-        let last_purged = *self.last_purged_log_id.read().await;
+        let last_purged = self.get_last_purged_log_id();
 
         let last = match last {
             None => last_purged,
@@ -271,6 +264,8 @@ impl RaftSnapshotBuilder<StorageRaftTypeConfig, Cursor<Vec<u8>>> for Arc<Storage
     }
 }
 
+const METAVOTE: &'static [u8; 9] = b"meta-vote";
+
 #[async_trait]
 impl RaftStorage<StorageRaftTypeConfig> for Arc<StorageNodeFileStore> {
     type SnapshotData = Cursor<Vec<u8>>;
@@ -279,13 +274,18 @@ impl RaftStorage<StorageRaftTypeConfig> for Arc<StorageNodeFileStore> {
 
     #[tracing::instrument(level = "trace", skip(self))]
     async fn save_vote(&mut self, vote: &Vote<StorageNodeId>) -> Result<(), StorageError<StorageNodeId>> {
-        let mut v = self.vote.write().await;
-        *v = Some(*vote);
+        let value = IVec::from(serde_json::to_vec(vote).unwrap());
+        self.meta.insert(METAVOTE, value);
         Ok(())
     }
 
     async fn read_vote(&mut self) -> Result<Option<Vote<StorageNodeId>>, StorageError<StorageNodeId>> {
-        Ok(*self.vote.read().await)
+        match self.meta.get(METAVOTE).unwrap() {
+            Some(res) => {
+                Ok(Some(serde_json::from_slice::<Vote<StorageNodeId>>(&*res).unwrap()))
+            }
+            None => Ok(None)
+        }
     }
 
     async fn get_log_reader(&mut self) -> Self::LogReader {
@@ -327,9 +327,10 @@ impl RaftStorage<StorageRaftTypeConfig> for Arc<StorageNodeFileStore> {
         tracing::debug!("delete_log: [{:?}, +oo)", log_id);
 
         {
-            let mut ld = self.last_purged_log_id.write().await;
-            assert!(*ld <= Some(log_id));
-            *ld = Some(log_id);
+            let mut ld = self.get_last_purged_log_id();
+            assert!(ld <= Some(log_id));
+            ld = Some(log_id);
+            self.set_last_purged_log_id(&ld.unwrap());
         }
 
         {
