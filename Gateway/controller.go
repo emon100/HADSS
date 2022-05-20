@@ -44,9 +44,9 @@ func (self GatewayController) getStorageNodeAddr() string {
 }
 
 func (self GatewayController) getId(c *gin.Context) {
-	id := c.Query("id")
+	id := c.Param("id")
 	h := sha256.Sum256([]byte(id))
-	log.Printf("getId: SHA-256: %s", hex.EncodeToString(h[:]))
+	log.Printf("getId: id: %s, SHA-256: %s", id, hex.EncodeToString(h[:]))
 
 	conn := connector.NewBasicConnection(self.getStorageNodeAddr(), connector.StrongConsistency)
 	data, err := conn.GetSlice(h[:])
@@ -58,9 +58,9 @@ func (self GatewayController) getId(c *gin.Context) {
 }
 
 func (self GatewayController) putId(c *gin.Context) {
-	id := c.Query("id")
+	id := c.Param("id")
 	h := sha256.Sum256([]byte(id))
-	log.Printf("putId: SHA-256: %s", hex.EncodeToString(h[:]))
+	log.Printf("putId: id: %s, SHA-256: %s", hex.EncodeToString(h[:]))
 
 	defer c.Request.Body.Close()
 	contentLength := c.Request.ContentLength
