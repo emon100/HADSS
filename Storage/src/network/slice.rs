@@ -12,8 +12,8 @@ use crate::store::fs_io::read_slice;
 #[get("/slice/{id}")]
 pub async fn get_slice(_app: web::Data<StorageNode>, req: HttpRequest) -> impl Responder {
     let id: String = req.match_info().get("id").unwrap().into();
-    if id.len() != 64 && id.is_ascii() {
-        return HttpResponse::NotAcceptable().body("ID should be 64 bytes long ascii.");
+    if id.len() < 64 + 1 + 1 && id.is_ascii() {
+        return HttpResponse::NotAcceptable().body("ID should be 64 bytes long ascii and '.' and object name.");
     }
     match read_slice(&id) {
         Ok(result) => HttpResponse::Ok().insert_header(("Content-Type", "application/octet-stream")).body(result),
@@ -25,8 +25,8 @@ pub async fn get_slice(_app: web::Data<StorageNode>, req: HttpRequest) -> impl R
 pub async fn put_slice(app: web::Data<StorageNode>, req: HttpRequest, body: web::Bytes) -> HttpResponse {
     let id: String = req.match_info().get("id").unwrap().into();
     println!("put: {}", id);
-    if id.len() != 64 && id.is_ascii() {
-        return HttpResponse::NotAcceptable().body("ID should be 64 bytes long ascii.");
+    if id.len() < 64 + 1 + 1 && id.is_ascii() {
+        return HttpResponse::NotAcceptable().body("ID should be 64 bytes long ascii and '.' and object name.");
     }
 
     let request = ClientWriteRequest::new(EntryPayload::Normal(StoreFileRequest::Set { id: id.clone(), value: body.to_vec() }));
