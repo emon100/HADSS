@@ -29,9 +29,9 @@ pub mod slice;
 pub mod raft;
 pub mod management;
 
-pub struct ExampleNetwork {}
+pub struct StorageNodeNetwork {}
 
-impl ExampleNetwork {
+impl StorageNodeNetwork {
     pub async fn send_rpc<Req, Resp, Err>(
         &self,
         target: StorageNodeId,
@@ -59,12 +59,12 @@ impl ExampleNetwork {
 
 // NOTE: This could be implemented also on `Arc<ExampleNetwork>`, but since it's empty, implemented directly.
 #[async_trait]
-impl RaftNetworkFactory<StorageRaftTypeConfig> for ExampleNetwork {
+impl RaftNetworkFactory<StorageRaftTypeConfig> for StorageNodeNetwork {
     type Network = ExampleNetworkConnection;
 
     async fn connect(&mut self, target: StorageNodeId, node: Option<&Node>) -> Self::Network {
         ExampleNetworkConnection {
-            owner: ExampleNetwork {},
+            owner: StorageNodeNetwork {},
             target,
             target_node: node.cloned(),
         }
@@ -72,7 +72,7 @@ impl RaftNetworkFactory<StorageRaftTypeConfig> for ExampleNetwork {
 }
 
 pub struct ExampleNetworkConnection {
-    owner: ExampleNetwork,
+    owner: StorageNodeNetwork,
     target: StorageNodeId,
     target_node: Option<Node>,
 }
@@ -129,7 +129,7 @@ pub async fn init_httpserver() -> std::io::Result<()> {
 
     // Create the network layer that will connect and communicate the raft instances and
     // will be used in conjunction with the store created above.
-    let network = ExampleNetwork {};
+    let network = StorageNodeNetwork {};
 
     // Create a local raft instance.
     let raft = Raft::new(ARGS.node_id, config.clone(), network, store.clone());
