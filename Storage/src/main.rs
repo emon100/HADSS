@@ -11,7 +11,7 @@ use network::init_httpserver;
 use std::lazy::SyncLazy;
 use std::sync::Arc;
 use openraft::{Raft};
-use crate::network::ExampleNetwork;
+use crate::network::StorageNodeNetwork;
 use crate::store::StorageNodeFileStore;
 use crate::store::StoreFileRequest;
 use crate::store::StoreFileResponse;
@@ -23,7 +23,7 @@ openraft::declare_raft_types!(
     pub StorageRaftTypeConfig: D = StoreFileRequest, R = StoreFileResponse, NodeId = StorageNodeId
 );
 
-pub type ExampleRaft = Raft<StorageRaftTypeConfig, ExampleNetwork, Arc<StorageNodeFileStore>>;
+pub type ExampleRaft = Raft<StorageRaftTypeConfig, StorageNodeNetwork, Arc<StorageNodeFileStore>>;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -38,7 +38,7 @@ pub struct Args {
     storage_directory_depth: usize,
     #[clap(short, long, default_value_t = 0)]
     node_id: StorageNodeId,
-    #[clap(long, default_value_t = 1<<30)]
+    #[clap(long, default_value_t = 1<<16)] // 64KB of payload per request
     payload_size: usize,
 }
 
