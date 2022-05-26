@@ -49,7 +49,8 @@ func (self GatewayController) getId(c *gin.Context) {
 	log.Printf("getId: id: %s, SHA-256: %s", id, hex.EncodeToString(h[:]))
 
 	conn := connector.NewBasicConnection(self.getStorageNodeAddr(), connector.StrongConsistency)
-	data, err := conn.GetSlice(h[:])
+	res := append(h[:], []byte(id)...)
+	data, err := conn.GetSlice(res)
 	if err != nil {
 		c.AbortWithError(502, err)
 		return
@@ -75,8 +76,9 @@ func (self GatewayController) putId(c *gin.Context) {
 		return
 	}
 
+	res := append(h[:], []byte(id)...)
 	conn := connector.NewBasicConnection(self.getStorageNodeAddr(), connector.StrongConsistency)
-	err = conn.PutSlice(h[:], data)
+	err = conn.PutSlice(res, data)
 	if err != nil {
 		c.AbortWithError(502, err)
 		return

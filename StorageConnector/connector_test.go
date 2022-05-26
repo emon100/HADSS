@@ -40,8 +40,8 @@ func TestValidateBasicStorageConnection(t *testing.T) {
 }
 
 func TestValidateHandler(t *testing.T) {
-	tc1 := make([]byte, 32)
-	tc2 := make([]byte, 32, 265)
+	tc1 := make([]byte, 33)
+	tc2 := make([]byte, 33, 265)
 	shouldPassTestcases := [][]byte{
 		tc1,
 		tc2,
@@ -51,8 +51,8 @@ func TestValidateHandler(t *testing.T) {
 			t.Errorf("ValidateHandler: should pass validation handler: %#v, error: %#v", tc, err)
 		}
 	}
-	tc3 := make([]byte, 63, 64)
-	tc4 := make([]byte, 2, 32)
+	tc3 := make([]byte, 2, 64)
+	tc4 := make([]byte, 32, 32)
 	shouldFailTestcases := [][]byte{
 		tc3,
 		tc4,
@@ -142,7 +142,7 @@ func TestBasicStorageConnection_GetSlice_response(t *testing.T) {
 
 	handler := sha256.Sum256([]byte("try"))
 	for _, conn := range good_response_connections {
-		data, err := conn.GetSlice(handler[:])
+		data, err := conn.GetSlice(append(handler[:], []byte("abc")...))
 		if err != nil {
 			t.Errorf("GetSlice_response: any error shouldn't happen, conn: %v, error: %#v", conn, err)
 			continue
@@ -256,7 +256,7 @@ func TestBasicStorageConnection_PutSlice_response(t *testing.T) {
 
 	handler := sha256.Sum256([]byte("try"))
 	for _, conn := range good_response_connections {
-		err := conn.PutSlice(handler[:], response_body)
+		err := conn.PutSlice(append(handler[:], []byte("abc")...), response_body)
 		if err != nil {
 			t.Errorf("PutSlice_response: any error shouldn't happen, conn: %v, error: %#v", conn, err)
 			continue

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -60,12 +61,10 @@ func validateBasicStorageConnection(conn BasicStorageConnection) error { //TODO:
 }
 
 func validateHandler(handler []byte) error {
-	switch len(handler) {
-	case SHA256BytesLength:
-		return nil
-	default:
+	if len(handler) <= SHA256BytesLength {
 		return ErrHandlerInvalid
 	}
+	return nil
 }
 
 func (recv BasicStorageConnection) buildAPISliceURL(handler []byte) string {
@@ -73,7 +72,7 @@ func (recv BasicStorageConnection) buildAPISliceURL(handler []byte) string {
 
 	b.WriteString(recv.addr)
 	b.WriteString("/slice/")
-	handlerInHex := hex.EncodeToString(handler)
+	handlerInHex := hex.EncodeToString(handler[:32]) + "." + url.PathEscape(string(handler[32:]))
 	b.WriteString(handlerInHex)
 	b.WriteString("?consistency_policy=")
 	b.WriteString(strconv.Itoa(int(recv.consistency_policy)))
