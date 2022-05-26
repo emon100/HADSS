@@ -3,8 +3,8 @@ use std::sync::Arc;
 use actix_web::{App, HttpServer, web};
 use actix_web::web::Data;
 use async_trait::async_trait;
-use openraft::{Config, Node, Raft};
-use openraft::error::AppendEntriesError;
+use openraft::{Config, Node, Raft, RaftMetrics};
+use openraft::error::{AppendEntriesError, Infallible};
 use openraft::error::InstallSnapshotError;
 use openraft::error::NetworkError;
 use openraft::error::RemoteError;
@@ -30,6 +30,32 @@ pub mod raft;
 pub mod management;
 
 pub struct StorageNodeNetwork {}
+
+use reqwest;
+use tokio::time;
+use std::future::Future;
+use serde_json::json;
+use tokio::time::Duration;
+
+fn set_interval<F, Fut>(mut f: F, dur: Duration)
+where
+    F: Send + 'static + FnMut() -> Fut,
+    Fut: Future<Output = ()> + Send + 'static,
+{
+    // Create stream of intervals.
+    let mut interval = time::interval(dur);
+
+    tokio::spawn(async move {
+        // Skip the first tick at 0ms.
+        interval.tick().await;
+        loop {
+            // Wait until next tick.
+            interval.tick().await;
+            // Spawn a task for this tick.
+            tokio::spawn(f());
+        }
+    });
+}
 
 impl StorageNodeNetwork {
     pub async fn send_rpc<Req, Resp, Err>(
@@ -138,11 +164,35 @@ pub async fn init_httpserver() -> std::io::Result<()> {
     // be later used on the actix-web services.
     let app = Data::new(StorageNode {
         id: ARGS.node_id,
-        addr: "127.0.0.1:21001".to_string(),//TODO not 0.0.0.0
+        addr: ARGS.node_addr.clone(),
         raft,
         store,
         config,
     });
+
+
+    let app1 = app.clone();
+
+    set_interval(move || {
+        let metrics = app1.raft.metrics().borrow().clone();
+        let now_state: String = if metrics.current_term == 0 { "ready".into() } else { "serving".into() };
+        let now_role = metrics.state.clone();
+
+
+        async move {
+            let json_body = json!({
+  "Status": now_state,
+  "NodeId": ARGS.node_id.to_string(),
+  "Role": now_role,
+  "Addr": ARGS.node_addr,
+  "Group": "-1",
+  "NodemapVersion": 1
+});
+            let client = reqwest::Client::new();
+            client.post(format!("http://{}/heartbeat", ARGS.monitor_addr))
+                  .body(json_body.to_string()).send().await;
+        }
+    }, Duration::new(5, 0) );
     HttpServer::new(move || {
         App::new()
             .app_data(app.clone())
@@ -160,7 +210,7 @@ pub async fn init_httpserver() -> std::io::Result<()> {
             .service(slice::get_slice)
             .service(slice::put_slice)
     })
-        .bind((ARGS.addr.to_string(), ARGS.port))?
+        .bind((ARGS.listen_addr.clone(), ARGS.port))?
         .run()
         .await
 }
