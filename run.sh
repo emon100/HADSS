@@ -33,25 +33,25 @@ rpc() {
 }
 
 gateway() {
-  pushd Gateway
-	go build -o /tmp/gateway
-	popd
+  pushd Gateway &&
+	go build -o /tmp/gateway &&
+	popd &&
 	/tmp/gateway -listenAddr $GATEWAY_LISTEN_ADDR -monitorAddr $MONITOR_ADDR &
 }
 
 monitor() {
-  pushd Monitor
-	go build -o /tmp/monitor
-	popd
-	/tmp/monitor -listenAddr $MONITOR_LISTEN_ADDR &
+  pushd Monitor &&
+  go build -o /tmp/monitor &&
+  popd &&
+  /tmp/monitor -listenAddr $MONITOR_LISTEN_ADDR &
 }
 
 storage() {
   pushd Storage
   cargo build
-	cargo run -- --port 21001 --node-id 1 --storage-location "/tmp/storage/node1" &
-	cargo run -- --port 21002 --node-id 2 --storage-location "/tmp/storage/node2" &
-	cargo run -- --port 21003 --node-id 3 --storage-location "/tmp/storage/node3" &
+	cargo run -- --port 21001 --node-id 1 --node-addr "127.0.0.1:21001" --monitor-addr "localhost:10000" --storage-location "/tmp/storage/node1" &
+	cargo run -- --port 21002 --node-id 2 --node-addr "127.0.0.1:21002" --monitor-addr "localhost:10000" --storage-location "/tmp/storage/node2" &
+	cargo run -- --port 21003 --node-id 3 --node-addr "127.0.0.1:21003" --monitor-addr "localhost:10000" --storage-location "/tmp/storage/node3" &
 	sleep 1
 	popd
 }
@@ -59,6 +59,7 @@ storage() {
 stopall() {
   echo "Stopping..."
   killall gateway
+  killall monitor
   killall /home/emon100/source/HADSS/Storage/target/debug/hadss_storage_node
   echo "Stopped all"
   exit 0
@@ -100,13 +101,14 @@ node_group_init() {
 }
 
 runall() {
+  etcd –data-dir ~/default.etcd
   gateway
   monitor
   storage
-  node_group_init
+# node_group_init
 
-  curl http://localhost:9999/id/trycpp --upload-file ~/try.cpp
-  curl http://localhost:9999/id/trycpp
+# curl http://localhost:9999/id/trycpp --upload-file ~/try.cpp
+# curl http://localhost:9999/id/trycpp
 
 
   sleep infinity
