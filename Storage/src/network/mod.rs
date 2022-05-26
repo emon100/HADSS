@@ -86,10 +86,10 @@ impl StorageNodeNetwork {
 // NOTE: This could be implemented also on `Arc<ExampleNetwork>`, but since it's empty, implemented directly.
 #[async_trait]
 impl RaftNetworkFactory<StorageRaftTypeConfig> for StorageNodeNetwork {
-    type Network = ExampleNetworkConnection;
+    type Network = StorageNodeNetworkConnection;
 
     async fn connect(&mut self, target: StorageNodeId, node: Option<&Node>) -> Self::Network {
-        ExampleNetworkConnection {
+        StorageNodeNetworkConnection {
             owner: StorageNodeNetwork {},
             target,
             target_node: node.cloned(),
@@ -97,14 +97,14 @@ impl RaftNetworkFactory<StorageRaftTypeConfig> for StorageNodeNetwork {
     }
 }
 
-pub struct ExampleNetworkConnection {
+pub struct StorageNodeNetworkConnection {
     owner: StorageNodeNetwork,
     target: StorageNodeId,
     target_node: Option<Node>,
 }
 
 #[async_trait]
-impl RaftNetwork<StorageRaftTypeConfig> for ExampleNetworkConnection {
+impl RaftNetwork<StorageRaftTypeConfig> for StorageNodeNetworkConnection {
     async fn send_append_entries(
         &mut self,
         req: AppendEntriesRequest<StorageRaftTypeConfig>,

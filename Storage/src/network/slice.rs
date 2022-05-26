@@ -5,7 +5,7 @@ use openraft::error::ClientWriteError;
 use openraft::raft::ClientWriteRequest;
 
 use crate::app::StorageNode;
-use crate::{StorageNodeId, StoreFileRequest};
+use crate::{StorageNodeId, StorageNodeRequest};
 use crate::store::fs_io::read_slice;
 
 //TODO: implement consistent read
@@ -29,7 +29,7 @@ pub async fn put_slice(app: web::Data<StorageNode>, req: HttpRequest, body: web:
         return HttpResponse::NotAcceptable().body("ID should be 64 bytes long ascii and '.' and object name.");
     }
 
-    let request = ClientWriteRequest::new(EntryPayload::Normal(StoreFileRequest::Set { id: id.clone(), value: body.to_vec() }));
+    let request = ClientWriteRequest::new(EntryPayload::Normal(StorageNodeRequest::StoreData { id: id.clone(), value: body.to_vec() }));
     let response = app.raft.client_write(request).await;
     match &response {
         Err(e) => {

@@ -42,8 +42,8 @@ pub mod fs_io;
  * You will want to add any request that can write data in all nodes here.
  */
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum StoreFileRequest {
-    Set { id: String, value: Vec<u8> },
+pub enum StorageNodeRequest {
+    StoreData { id: String, value: Vec<u8> },
 }
 
 /**
@@ -52,7 +52,7 @@ pub enum StoreFileRequest {
  * the `ExampleRequest.Set`.
  */
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct StoreFileResponse {
+pub struct StorageNodeResponse {
     pub value: Option<Vec<u8>>,
 }
 
@@ -76,6 +76,7 @@ pub struct StorageNodeStoreStateMachine {
 
     // TODO: it should not be Option.
     pub last_membership: EffectiveMembership<StorageNodeId>,
+
 
     /// Application data.
     pub data: Vec<String>,
@@ -358,7 +359,7 @@ impl RaftStorage<StorageRaftTypeConfig> for Arc<StorageNodeFileStore> {
     async fn apply_to_state_machine(
         &mut self,
         entries: &[&Entry<StorageRaftTypeConfig>],
-    ) -> Result<Vec<StoreFileResponse>, StorageError<StorageNodeId>> {
+    ) -> Result<Vec<StorageNodeResponse>, StorageError<StorageNodeId>> {
         let mut res = Vec::with_capacity(entries.len());
 
         let mut sm = self.state_machine.write().await;
@@ -369,19 +370,19 @@ impl RaftStorage<StorageRaftTypeConfig> for Arc<StorageNodeFileStore> {
             sm.last_applied_log = Some(entry.log_id);
 
             match entry.payload {
-                EntryPayload::Blank => res.push(StoreFileResponse { value: None }),
+                EntryPayload::Blank => res.push(StorageNodeResponse { value: None }),
                 EntryPayload::Normal(ref req) => match req {
-                    StoreFileRequest::Set { id: key, value } => {
+                    StorageNodeRequest::StoreData { id: key, value } => {
                         sm.data.push(key.clone());
                         if let Err(_) = fs_io::store_slice(key, value) {//TODO: return error when can't storage.
                         } else {
-                            res.push(StoreFileResponse { value: None })
+                            res.push(StorageNodeResponse { value: None })
                         }
                     }
                 },
                 EntryPayload::Membership(ref mem) => {
                     sm.last_membership = EffectiveMembership::new(Some(entry.log_id), mem.clone());
-                    res.push(StoreFileResponse { value: None })
+                    res.push(StorageNodeResponse { value: None })
                 }
             };
         }

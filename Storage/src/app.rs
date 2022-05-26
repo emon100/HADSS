@@ -3,7 +3,7 @@ use std::sync::Arc;
 use openraft::Config;
 
 use crate::StorageNodeId;
-use crate::ExampleRaft;
+use crate::StorageNodeRaft;
 use crate::store::StorageNodeFileStore;
 
 // Representation of an application state. This struct can be shared around to share
@@ -11,7 +11,7 @@ use crate::store::StorageNodeFileStore;
 pub struct StorageNode {
     pub id: StorageNodeId,
     pub addr: String,
-    pub raft: ExampleRaft,
+    pub raft: StorageNodeRaft,
     pub store: Arc<StorageNodeFileStore>,
     pub config: Arc<Config>,
 }

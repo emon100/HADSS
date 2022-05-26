@@ -23,7 +23,7 @@ openraft::declare_raft_types!(
     pub StorageRaftTypeConfig: D = StorageNodeRequest, R = StorageNodeResponse, NodeId = StorageNodeId
 );
 
-pub type ExampleRaft = Raft<StorageRaftTypeConfig, StorageNodeNetwork, Arc<StorageNodeFileStore>>;
+pub type StorageNodeRaft = Raft<StorageRaftTypeConfig, StorageNodeNetwork, Arc<StorageNodeFileStore>>;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
