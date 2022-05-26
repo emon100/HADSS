@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 use std::io::Cursor;
-use std::ops::{Bound, Index, RangeBounds};
+use std::ops::{Bound, RangeBounds};
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -22,8 +22,7 @@ use openraft::storage::Snapshot;
 use openraft::StorageError;
 use openraft::StorageIOError;
 use openraft::Vote;
-use rand::Rng;
-use serde::{Deserialize, ser};
+use serde::{Deserialize};
 use serde::Serialize;
 use sled::{Db, IVec};
 use tokio::sync::RwLock;

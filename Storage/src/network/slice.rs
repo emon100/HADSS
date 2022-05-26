@@ -5,7 +5,7 @@ use openraft::error::ClientWriteError;
 use openraft::raft::ClientWriteRequest;
 
 use crate::app::StorageNode;
-use crate::{StorageNodeId, StorageNodeRequest};
+use crate::{StorageNodeRequest};
 use crate::store::fs_io::read_slice;
 
 //TODO: implement consistent read
