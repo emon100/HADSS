@@ -7,7 +7,11 @@ import (
 	"github.com/gin-gonic/gin"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/client/v3/concurrency"
+	"io/ioutil"
 	"log"
+	"math/big"
+	"net/http"
+	"strings"
 	"time"
 )
 
@@ -20,7 +24,8 @@ type NodeRange struct {
 	Range      []string
 }
 type Nodemap struct {
-	NodesRanges []NodeRange
+	NodesRanges    []NodeRange
+	NodemapVersion int64
 }
 
 //type Nodemap = map[string]NodeRange
@@ -40,19 +45,42 @@ type StorageNodeHeartBeat struct {
 	Role           string
 	Addr           string
 	Group          string
-	NodemapVersion int
+	NodemapVersion int64
 }
 
 func (s *MonitorController) heartbeat(c *gin.Context) {
+	body, err := ioutil.ReadAll(c.Request.Body)
+	if err != nil {
+		c.AbortWithError(400, fmt.Errorf("HTTP body error: %e", err))
+		return
+	}
+
 	var heartbeat StorageNodeHeartBeat
-	decoder := json.NewDecoder(c.Request.Body)
-	err := decoder.Decode(&heartbeat)
+	err = json.Unmarshal(body, &heartbeat)
 	if err != nil {
 		c.AbortWithError(400, fmt.Errorf("json decode body error: %e", err))
 		return
 	}
 	log.Printf("/heartbeat: %+v", heartbeat)
-	c.PureJSON(200, s)
+	s.etcdCli.Put(s.ctx, "/nodes/"+heartbeat.NodeId, string(body))
+	//c.PureJSON(200, s)
+	c.Status(200)
+}
+
+func (s *MonitorController) getNodemapFromEtcd() (*Nodemap, error) {
+	res, err := s.etcdCli.Get(s.ctx, "/nodemap")
+	if err != nil {
+		return nil, err
+	}
+	if len(res.Kvs) != 1 {
+		return nil, fmt.Errorf("nodemap length not correct")
+	}
+	var nodemap Nodemap
+	err = json.Unmarshal(res.Kvs[0].Value, &nodemap)
+	if err != nil {
+		return nil, err
+	}
+	return &nodemap, nil
 }
 
 //TODO
@@ -62,13 +90,9 @@ func (s *MonitorController) heartbeat(c *gin.Context) {
 func (s *MonitorController) getNodemap(c *gin.Context) {
 	//get all nodeid
 	//split/rearrange the fullest segment
-	res, err := s.etcdCli.Get(s.ctx, "/nodemap")
+	res, err := s.getNodemapFromEtcd()
 	if err != nil {
 		c.AbortWithError(500, fmt.Errorf("get nodemap store error: %e", err))
-		return
-	}
-	if len(res.Kvs) != 1 {
-		c.AbortWithError(500, fmt.Errorf("etcd return store length incorrect: %+v, error: %e", res.Kvs, err))
 		return
 	}
 	/*
@@ -77,7 +101,7 @@ func (s *MonitorController) getNodemap(c *gin.Context) {
 		if err ...
 
 	*/
-	c.Data(200, "application/json", res.Kvs[0].Value)
+	c.JSON(200, res)
 }
 
 /*
@@ -108,23 +132,62 @@ func (s *MonitorController) getNodemap(c *gin.Context) {
   "NodemapVersion": 1
 }
 
-func (c MonitorController)tryCalculateNewNodemap() error {
-	nodes, err := c.CollectNodesInfo()
-	for StorageNode {
-		if status != ready or NodemapVersion < NowNodemapVersion {
-			can't update nodemap now because newest nodemap haven't been applied to every nodes yet.
-			releaseLock after a while using lease
-			return
+*/
+
+func (c MonitorController) tryCalculateNewNodemap(nodemap []StorageNodeHeartBeat, oldNodemap *Nodemap) (*Nodemap, error) {
+	readyNodecount := 0
+	var newGroups []NodeRange
+	for _, heartbeat := range nodemap {
+		if heartbeat.Status == "ready" {
+			readyNodecount++
+			if readyNodecount%3 == 1 {
+				newGroup := NodeRange{
+					Range:      []string{"0", "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"},
+					NodesAddrs: []string{},
+				}
+				newGroups = append(newGroups, newGroup)
+			}
+			newGroups[(readyNodecount-1)/3].NodesAddrs = append(newGroups[(readyNodecount-1)/3].NodesAddrs, heartbeat.Addr)
 		}
 	}
-	newNodemap =	ProcessNodesInfo
-	nodemapVersion++
-}
 
-*/
+	newGroupCounts := readyNodecount / 3
+	if newGroupCounts == 0 {
+		return oldNodemap, nil
+	}
+	newGroups = newGroups[:newGroupCounts]
+	rangeSplit := newGroupCounts + len(oldNodemap.NodesRanges)
+
+	for _, newGroup := range newGroups {
+		log.Printf("newGroup: %+v", newGroups)
+		//TODO new err handle
+		log.Printf("creating newGroup: %+v", newGroups)
+		http.Post("http://"+newGroup.NodesAddrs[0]+"/init", "application/json", strings.NewReader("{}"))
+		time.Sleep(1 * time.Second)
+		http.Post("http://"+newGroup.NodesAddrs[0]+"/add-learner", "application/json", strings.NewReader("[2, \""+newGroup.NodesAddrs[1]+"\"]"))
+		time.Sleep(1 * time.Second)
+		http.Post("http://"+newGroup.NodesAddrs[0]+"/add-learner", "application/json", strings.NewReader("[3, \""+newGroup.NodesAddrs[2]+"\"]"))
+		time.Sleep(1 * time.Second)
+		http.Post("http://"+newGroup.NodesAddrs[0]+"/change-membership", "application/json", strings.NewReader("[1, 2, 3]"))
+		log.Printf("created newGroup")
+	}
+	oldNodemap.NodesRanges = append(oldNodemap.NodesRanges, newGroups...)
+	// Set ranges //TODO last one will not fill the whole area because 10/3*3 == 9 but 9 != 10
+	i := new(big.Int)
+	i.SetString("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF", 16)
+	each := i.Div(i, big.NewInt(int64(rangeSplit)))
+	now := big.NewInt(0)
+	for i := range oldNodemap.NodesRanges {
+		oldNodemap.NodesRanges[i].Range[0] = now.Text(16)
+		now.Add(now, each)
+		oldNodemap.NodesRanges[i].Range[1] = now.Text(16)
+	}
+	oldNodemap.NodesRanges[rangeSplit-1].Range[1] = "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
+	return oldNodemap, nil
+}
 func (s *MonitorController) CollectNodesInfo() ([]StorageNodeHeartBeat, error) {
 	gresp, err := s.etcdCli.Get(s.ctx, "/nodes", clientv3.WithPrefix())
-	if err != nil {
+	if err != nil || len(gresp.Kvs) == 0 {
 		return nil, err
 	}
 	res := make([]StorageNodeHeartBeat, len(gresp.Kvs))
@@ -134,7 +197,7 @@ func (s *MonitorController) CollectNodesInfo() ([]StorageNodeHeartBeat, error) {
 			return nil, err
 		}
 	}
-	log.Println("CollectNodesInfo: res=%+v", res)
+	log.Printf("CollectNodesInfo: res=%+v", res)
 	return res, nil
 }
 
@@ -163,16 +226,34 @@ func (s *MonitorController) startRepeatingCalculation() {
 	go func() {
 		defer session.Close()
 		for {
-			log.Printf("Try lock")
-			err = mutex.Lock(context.Background())
-			log.Printf("get lock")
+			func() {
+				log.Printf("Try lock")
+				err = mutex.Lock(context.Background())
+				defer time.Sleep(10 * time.Second)
+				defer mutex.Unlock(context.Background())
+				if err != nil {
+					log.Printf("get lock error")
+					return
+				}
+				log.Printf("get lock")
 
-			//do all calculation
-			//nodes, err := s.CollectNodesInfo()
-			//nodemap := s.tryCalculateNewNodemap(nodes)
-			//putNodemap(nodemap)
-			mutex.Unlock(context.Background())
-			time.Sleep(10 * time.Second)
+				//TODO handle errors
+				nodes, err := s.CollectNodesInfo()
+				if err != nil {
+					log.Printf("Collect Node error")
+					return
+				}
+				oldNodemap, err := s.getNodemapFromEtcd()
+				if err != nil { //TODO delete initialize nodemap when err, just for test
+					oldNodemap = new(Nodemap)
+					log.Printf("GetNodemapFromEtcdError")
+				}
+				log.Printf("original nodemap %+v", oldNodemap)
+				newNodemap, _ := s.tryCalculateNewNodemap(nodes, oldNodemap)
+				json, _ := json.Marshal(newNodemap)
+				log.Printf("new nodemap %+v", newNodemap)
+				s.etcdCli.Put(s.ctx, "/nodemap", string(json))
+			}()
 		}
 	}()
 }

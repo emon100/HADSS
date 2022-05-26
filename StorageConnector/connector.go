@@ -5,12 +5,17 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
 )
+
+func init() {
+	log.SetPrefix("Connector: ")
+}
 
 type StorageNodeGetter interface {
 	GetSlice(handler []byte) (buf []byte, err error)
@@ -70,6 +75,7 @@ func validateHandler(handler []byte) error {
 func (recv BasicStorageConnection) buildAPISliceURL(handler []byte) string {
 	b := strings.Builder{}
 
+	b.WriteString("http://")
 	b.WriteString(recv.addr)
 	b.WriteString("/slice/")
 	handlerInHex := hex.EncodeToString(handler[:32]) + "." + url.PathEscape(string(handler[32:]))

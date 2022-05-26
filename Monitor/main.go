@@ -8,6 +8,13 @@ import (
 	"strings"
 )
 
+/*
+func init() {
+	log.SetPrefix("Monitor: ")
+}
+
+*/
+
 func parseArguments() (listenAddr string, etcdAddr string) {
 	flag.StringVar(&listenAddr, "listenAddr", "0.0.0.0:10000", "The address to listen.")
 	flag.StringVar(&etcdAddr, "etcdAddr", "localhost:2379", "The address to listen.")
