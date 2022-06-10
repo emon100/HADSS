@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"strings"
+	"sync"
 )
 
 func parseArguments() (listenAddr string, monitorAddr string) {
@@ -16,6 +17,6 @@ func parseArguments() (listenAddr string, monitorAddr string) {
 
 func main() {
 	listenAddr, monitorAddr := parseArguments()
-	controller := GatewayController{monitorAddr}
+	controller := GatewayController{monitorAddr, new(Nodemap), new(sync.RWMutex)}
 	controller.startServer(listenAddr)
 }

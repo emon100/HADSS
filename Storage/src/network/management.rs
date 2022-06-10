@@ -1,18 +1,21 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::collections::BTreeSet;
 
 use actix_web::{get, HttpResponse};
+use actix_web::dev::JsonBody::Body;
 use actix_web::post;
 use actix_web::web;
 use actix_web::web::Data;
 use actix_web::Responder;
 use openraft::error::Infallible;
-use openraft::Node;
+use openraft::{EntryPayload, Node};
+use openraft::raft::ClientWriteRequest;
 use openraft::RaftMetrics;
+use serde_json::json;
 use web::Json;
 
 use crate::app::StorageNode;
-use crate::StorageNodeId;
+use crate::{ARGS, StorageNodeId, StorageNodeRequest};
 use crate::StorageRaftTypeConfig;
 
 // --- Cluster management
@@ -58,6 +61,26 @@ pub async fn init(app: Data<StorageNode>) -> actix_web::Result<impl Responder> {
     Ok(Json(res))
 }
 
+/*
+/// Initialize a single-node cluster.
+#[post("/nodemap")]
+pub async fn nodemap(app: Data<StorageNode>, body: web::Bytes) -> impl Responder {
+    let data: serde_json::Value = serde_json::from_slice(&*body.to_vec()).unwrap();
+    for i in 0.. {
+        if data["NodesRanged"][i] == json!(null) {
+           break
+        }
+        if data["NodesRanged"][i]["NodesAddrs"][0].to_string().contains(&ARGS.node_addr) {
+            let request = ClientWriteRequest::new(EntryPayload::Normal(StorageNodeRequest::ChangeNodeMap {}));
+
+            let res = app.raft.initialize(nodes).await;
+            return HttpResponse::Ok().body("Changed membership")
+        }
+    }
+    HttpResponse::Ok().body("I'm healthy.")
+}
+
+ */
 /// Get the latest metrics of the cluster
 #[get("/metrics")]
 pub async fn metrics(app: Data<StorageNode>) -> actix_web::Result<impl Responder> {

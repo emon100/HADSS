@@ -35,10 +35,14 @@ pub async fn put_slice(app: web::Data<StorageNode>, req: HttpRequest, body: web:
         Err(e) => {
             match e {
                 ClientWriteError::ForwardToLeader(nid) => {
-                    let addr = nid.clone().leader_node.unwrap().addr;
-                    HttpResponse::TemporaryRedirect()
-                        .insert_header((header::LOCATION,format!("http://{}/slice/{}", addr, id)))
-                        .json(&response)
+                    if let Some(leader) = nid.clone().leader_node {
+                        HttpResponse::TemporaryRedirect()
+                            .insert_header((header::LOCATION,format!("http://{}/slice/{}", leader.addr, id)))
+                            .json(&response)
+                    } else {
+                        HttpResponse::InternalServerError()
+                            .json(&response)
+                    }
                 }
                 _ => {
                     HttpResponse::InternalServerError()

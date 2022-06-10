@@ -49,20 +49,30 @@ monitor() {
 storage() {
   pushd Storage
   cargo build
-	cargo run -- --port 21001 --node-id 1 --node-addr "127.0.0.1:21001" --monitor-addr "localhost:10000" --storage-location "/tmp/storage/node1" &
-	cargo run -- --port 21002 --node-id 2 --node-addr "127.0.0.1:21002" --monitor-addr "localhost:10000" --storage-location "/tmp/storage/node2" &
-	cargo run -- --port 21003 --node-id 3 --node-addr "127.0.0.1:21003" --monitor-addr "localhost:10000" --storage-location "/tmp/storage/node3" &
+	RUST_BACKTRACE=full cargo run -- --port 21001 --node-id 1 --node-addr "127.0.0.1:21001" --monitor-addr "localhost:10000" --storage-location "/tmp/storage/node1" &
+	RUST_BACKTRACE=full cargo run -- --port 21002 --node-id 2 --node-addr "127.0.0.1:21002" --monitor-addr "localhost:10000" --storage-location "/tmp/storage/node2" &
+	RUST_BACKTRACE=full cargo run -- --port 21003 --node-id 3 --node-addr "127.0.0.1:21003" --monitor-addr "localhost:10000" --storage-location "/tmp/storage/node3" &
 	sleep 1
 	popd
 }
 
 stopall() {
   echo "Stopping..."
+  killall etcd
   killall gateway
   killall monitor
   killall /home/emon100/source/HADSS/Storage/target/debug/hadss_storage_node
   echo "Stopped all"
   exit 0
+}
+
+clean() {
+  killall etcd
+  killall gateway
+  killall monitor
+  killall /home/emon100/source/HADSS/Storage/target/debug/hadss_storage_node
+  rm -rf /tmp/storage/
+  rm -rf ~/default.etcd/
 }
 
 node_group_init() {
@@ -100,8 +110,17 @@ node_group_init() {
   sleep 1
 }
 
+try(){
+  pushd Storage
+  cargo run -- --port 21004 --node-id 4 --node-addr "127.0.0.1:21004" --monitor-addr "localhost:10000" --storage-location "/tmp/storage/node4" &
+  cargo run -- --port 21005 --node-id 5 --node-addr "127.0.0.1:21005" --monitor-addr "localhost:10000" --storage-location "/tmp/storage/node5" &
+  cargo run -- --port 21006 --node-id 6 --node-addr "127.0.0.1:21006" --monitor-addr "localhost:10000" --storage-location "/tmp/storage/node6" &
+  popd
+}
+
 runall() {
-  etcd –data-dir ~/default.etcd
+  clean
+  etcd --data-dir ~/default.etcd &
   gateway
   monitor
   storage
@@ -110,8 +129,8 @@ runall() {
 # curl http://localhost:9999/id/trycpp --upload-file ~/try.cpp
 # curl http://localhost:9999/id/trycpp
 
-
   sleep infinity
 }
 
 runall
+

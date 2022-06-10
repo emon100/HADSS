@@ -43,6 +43,7 @@ pub mod fs_io;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum StorageNodeRequest {
     StoreData { id: String, value: Vec<u8> },
+    ChangeNodeMap { },
 }
 
 /**
@@ -79,6 +80,8 @@ pub struct StorageNodeStoreStateMachine {
 
     /// Application data.
     pub data: Vec<String>,
+
+    pub nodemap_version: i64,
 }
 
 #[derive(Debug)]
@@ -301,6 +304,7 @@ impl RaftStorage<StorageRaftTypeConfig> for Arc<StorageNodeFileStore> {
         for entry in entries {
             log.insert(entry.log_id.index.to_be_bytes(), IVec::from(serde_json::to_vec(&*entry).unwrap()));
         }
+        log.flush_async().await.expect("append_to_log: Flush failed");
         Ok(())
     }
 
@@ -318,7 +322,7 @@ impl RaftStorage<StorageRaftTypeConfig> for Arc<StorageNodeFileStore> {
         for key in keys {
             log.remove(&key);
         }
-
+        log.flush_async().await.expect("delete_conflict_logs_since: Flush failed");
         Ok(())
     }
 
@@ -377,6 +381,9 @@ impl RaftStorage<StorageRaftTypeConfig> for Arc<StorageNodeFileStore> {
                         } else {
                             res.push(StorageNodeResponse { value: None })
                         }
+                    },
+                    StorageNodeRequest::ChangeNodeMap {} => {
+                        sm.nodemap_version += 1
                     }
                 },
                 EntryPayload::Membership(ref mem) => {
@@ -403,6 +410,7 @@ impl RaftStorage<StorageRaftTypeConfig> for Arc<StorageNodeFileStore> {
         meta: &SnapshotMeta<StorageNodeId>,
         snapshot: Box<Self::SnapshotData>,
     ) -> Result<StateMachineChanges<StorageRaftTypeConfig>, StorageError<StorageNodeId>> {
+        //panic!("Starting installing snapshot.");
         tracing::info!(
             { snapshot_size = snapshot.get_ref().len() },
             "decoding snapshot for installation"
@@ -440,6 +448,7 @@ impl RaftStorage<StorageRaftTypeConfig> for Arc<StorageNodeFileStore> {
     async fn get_current_snapshot(
         &mut self,
     ) -> Result<Option<Snapshot<StorageNodeId, Self::SnapshotData>>, StorageError<StorageNodeId>> {
+        //panic!("Starting getting snapshot.");
         match &*self.current_snapshot.read().await {
             Some(snapshot) => {
                 let data = snapshot.data.clone();
