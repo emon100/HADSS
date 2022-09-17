@@ -1,21 +1,18 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
 use actix_web::{get, HttpResponse};
-use actix_web::dev::JsonBody::Body;
 use actix_web::post;
+use actix_web::Responder;
 use actix_web::web;
 use actix_web::web::Data;
-use actix_web::Responder;
 use openraft::error::Infallible;
-use openraft::{EntryPayload, Node};
-use openraft::raft::ClientWriteRequest;
+use openraft::Node;
 use openraft::RaftMetrics;
-use serde_json::json;
 use web::Json;
 
-use crate::app::StorageNode;
-use crate::{ARGS, StorageNodeId, StorageNodeRequest};
+use crate::{ARGS, StorageNode, StorageNodeId, StorageNodeRequest};
+use crate::app::StorageApp;
 use crate::StorageRaftTypeConfig;
 
 // --- Cluster management
@@ -27,22 +24,22 @@ use crate::StorageRaftTypeConfig;
 /// (by calling `change-membership`)
 #[post("/add-learner")]
 pub async fn add_learner(
-    app: Data<StorageNode>,
+    app: Data<StorageApp>,
     req: Json<(StorageNodeId, String)>,
 ) -> actix_web::Result<impl Responder> {
-    let node_id = req.0 .0;
-    let node = Node {
-        addr: req.0 .1.clone(),
-        ..Default::default()
+    let node_id = req.0.0;
+    let node = StorageNode {
+        rpc_addr: req.0.1.clone(),
+        api_addr: req.0.1.clone(),
     };
-    let res = app.raft.add_learner(node_id, Some(node), true).await;
+    let res = app.raft.add_learner(node_id, node, true).await;
     Ok(Json(res))
 }
 
 /// Changes specified learners to members, or remove members.
 #[post("/change-membership")]
 pub async fn change_membership(
-    app: Data<StorageNode>,
+    app: Data<StorageApp>,
     req: Json<BTreeSet<StorageNodeId>>,
 ) -> actix_web::Result<impl Responder> {
     let res = app.raft.change_membership(req.0, true, false).await;
@@ -51,11 +48,11 @@ pub async fn change_membership(
 
 /// Initialize a single-node cluster.
 #[post("/init")]
-pub async fn init(app: Data<StorageNode>) -> actix_web::Result<impl Responder> {
+pub async fn init(app: Data<StorageApp>) -> actix_web::Result<impl Responder> {
     let mut nodes = BTreeMap::new();
-    nodes.insert(app.id, Node {
-        addr: app.addr.clone(),
-        data: Default::default(),
+    nodes.insert(app.id, StorageNode {
+        rpc_addr: app.addr.clone(),
+        api_addr: app.addr.clone(),
     });
     let res = app.raft.initialize(nodes).await;
     Ok(Json(res))
@@ -83,10 +80,10 @@ pub async fn nodemap(app: Data<StorageNode>, body: web::Bytes) -> impl Responder
  */
 /// Get the latest metrics of the cluster
 #[get("/metrics")]
-pub async fn metrics(app: Data<StorageNode>) -> actix_web::Result<impl Responder> {
+pub async fn metrics(app: Data<StorageApp>) -> actix_web::Result<impl Responder> {
     let metrics = app.raft.metrics().borrow().clone();
 
-    let res: Result<RaftMetrics<StorageRaftTypeConfig>, Infallible> = Ok(metrics);
+    let res: Result<RaftMetrics<StorageNodeId, StorageNode>, Infallible> = Ok(metrics);
     Ok(Json(res))
 }
 

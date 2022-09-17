@@ -33,10 +33,10 @@ rpc() {
 }
 
 gateway() {
-  pushd Gateway &&
-	go build -o /tmp/gateway &&
-	popd &&
-	/tmp/gateway -listenAddr $GATEWAY_LISTEN_ADDR -monitorAddr $MONITOR_ADDR &
+    pushd Gateway &&
+    go build -o /tmp/gateway &&
+    popd &&
+    /tmp/gateway -listenAddr $GATEWAY_LISTEN_ADDR -monitorAddr $MONITOR_ADDR &
 }
 
 monitor() {

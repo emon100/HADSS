@@ -4,7 +4,7 @@ use std::ops::{Bound, RangeBounds};
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use openraft::{AnyError};
+use openraft::AnyError;
 use openraft::async_trait::async_trait;
 use openraft::EffectiveMembership;
 use openraft::Entry;
@@ -16,18 +16,17 @@ use openraft::RaftLogReader;
 use openraft::RaftSnapshotBuilder;
 use openraft::RaftStorage;
 use openraft::SnapshotMeta;
-use openraft::StateMachineChanges;
 use openraft::storage::LogState;
 use openraft::storage::Snapshot;
 use openraft::StorageError;
 use openraft::StorageIOError;
 use openraft::Vote;
-use serde::{Deserialize};
+use serde::Deserialize;
 use serde::Serialize;
 use sled::{Db, IVec};
 use tokio::sync::RwLock;
 
-use crate::{ARGS, StorageNodeId};
+use crate::{ARGS, StorageNode, StorageNodeId};
 use crate::StorageRaftTypeConfig;
 
 pub mod fs_io;
@@ -43,7 +42,7 @@ pub mod fs_io;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum StorageNodeRequest {
     StoreData { id: String, value: Vec<u8> },
-    ChangeNodeMap { },
+    ChangeNodeMap {},
 }
 
 /**
@@ -58,7 +57,7 @@ pub struct StorageNodeResponse {
 
 #[derive(Debug)]
 pub struct StorageNodeStoreSnapshot {
-    pub meta: SnapshotMeta<StorageNodeId>,
+    pub meta: SnapshotMeta<StorageNodeId, StorageNode>,
 
     /// The data of the state machine at the time of this snapshot.
     pub data: Vec<u8>,
@@ -75,8 +74,7 @@ pub struct StorageNodeStoreStateMachine {
     pub last_applied_log: Option<LogId<StorageNodeId>>,
 
     // TODO: it should not be Option.
-    pub last_membership: EffectiveMembership<StorageNodeId>,
-
+    pub last_membership: EffectiveMembership<StorageNodeId, StorageNode>,
 
     /// Application data.
     pub data: Vec<String>,
@@ -96,7 +94,8 @@ pub struct StorageNodeFileStore {
     //In raft, only three things have to be persisted: logs, current_term, voted_for.
 
     /// The Raft log.
-    pub log: sled::Tree,//RwLock<BTreeMap<u64, Entry<StorageRaftTypeConfig>>>,
+    pub log: sled::Tree,
+    //RwLock<BTreeMap<u64, Entry<StorageRaftTypeConfig>>>,
     pub meta: sled::Tree, //voted_for and current_term
 
     /// The Raft state machine.
@@ -111,7 +110,7 @@ pub struct StorageNodeFileStore {
 }
 
 fn get_sled_db() -> Db {
-    sled::open(format!("{}/{}",ARGS.storage_location, "database")).unwrap()
+    sled::open(format!("{}/{}", ARGS.storage_location, "database")).unwrap()
 }
 
 
@@ -142,7 +141,7 @@ impl StorageNodeFileStore {
         }
     }
 
-    fn get_last_purged_log_id(&self) -> Option<LogId<StorageNodeId>>{
+    fn get_last_purged_log_id(&self) -> Option<LogId<StorageNodeId>> {
         match self.meta.get(b"last-purged").unwrap() {
             None => None,
             Some(res) => serde_json::from_slice::<Option<LogId<StorageNodeId>>>(&*res).unwrap()
@@ -213,7 +212,7 @@ impl RaftSnapshotBuilder<StorageRaftTypeConfig, Cursor<Vec<u8>>> for Arc<Storage
     #[tracing::instrument(level = "trace", skip(self))]
     async fn build_snapshot(
         &mut self,
-    ) -> Result<Snapshot<StorageNodeId, Cursor<Vec<u8>>>, StorageError<StorageNodeId>> {
+    ) -> Result<Snapshot<StorageNodeId, StorageNode, Cursor<Vec<u8>>>, StorageError<StorageNodeId>> {
         let (data, last_applied_log, last_membership);
 
         {
@@ -246,7 +245,7 @@ impl RaftSnapshotBuilder<StorageRaftTypeConfig, Cursor<Vec<u8>>> for Arc<Storage
 
         let meta = SnapshotMeta {
             last_log_id: last_applied_log,
-            last_membership ,
+            last_membership,
             snapshot_id,
         };
 
@@ -353,7 +352,7 @@ impl RaftStorage<StorageRaftTypeConfig> for Arc<StorageNodeFileStore> {
 
     async fn last_applied_state(
         &mut self,
-    ) -> Result<(Option<LogId<StorageNodeId>>, EffectiveMembership<StorageNodeId>), StorageError<StorageNodeId>> {
+    ) -> Result<(Option<LogId<StorageNodeId>>, EffectiveMembership<StorageNodeId, StorageNode>), StorageError<StorageNodeId>> {
         let state_machine = self.state_machine.read().await;
         Ok((state_machine.last_applied_log, state_machine.last_membership.clone()))
     }
@@ -381,7 +380,7 @@ impl RaftStorage<StorageRaftTypeConfig> for Arc<StorageNodeFileStore> {
                         } else {
                             res.push(StorageNodeResponse { value: None })
                         }
-                    },
+                    }
                     StorageNodeRequest::ChangeNodeMap {} => {
                         sm.nodemap_version += 1
                     }
@@ -407,7 +406,7 @@ impl RaftStorage<StorageRaftTypeConfig> for Arc<StorageNodeFileStore> {
     #[tracing::instrument(level = "trace", skip(self, snapshot))]
     async fn install_snapshot(
         &mut self,
-        meta: &SnapshotMeta<StorageNodeId>,
+        meta: &SnapshotMeta<StorageNodeId, StorageNode>,
         snapshot: Box<Self::SnapshotData>,
     ) -> Result<StateMachineChanges<StorageRaftTypeConfig>, StorageError<StorageNodeId>> {
         //panic!("Starting installing snapshot.");
@@ -447,7 +446,7 @@ impl RaftStorage<StorageRaftTypeConfig> for Arc<StorageNodeFileStore> {
     #[tracing::instrument(level = "trace", skip(self))]
     async fn get_current_snapshot(
         &mut self,
-    ) -> Result<Option<Snapshot<StorageNodeId, Self::SnapshotData>>, StorageError<StorageNodeId>> {
+    ) -> Result<Option<Snapshot<StorageNodeId, StorageNode, Self::SnapshotData>>, StorageError<StorageNodeId>> {
         //panic!("Starting getting snapshot.");
         match &*self.current_snapshot.read().await {
             Some(snapshot) => {

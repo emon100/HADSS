@@ -12,9 +12,9 @@ fn split_id_into_directory_and_filename(id: &str,
                                         directory_name_length: usize)
                                         -> (DirectoryPath, Filename) {
     let chunks: Vec<&str> = id.as_bytes()
-                   .chunks(directory_name_length)
-                   .map(|x| std::str::from_utf8(x).unwrap())
-                   .collect();
+                              .chunks(directory_name_length)
+                              .map(|x| std::str::from_utf8(x).unwrap())
+                              .collect();
 
     let directory: String = chunks
         .iter()
