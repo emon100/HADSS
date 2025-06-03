@@ -1,4 +1,5 @@
 # Monitor
+The Monitor component embodies the core logic of the Index Layer described in the main project README.
 Monitor is the brain of Index Layer.
 It monitors Storage Layer status and performs recovery. e.g.
 - Monitor Storage Nodes cluster scales up/down
@@ -12,7 +13,7 @@ It monitors Storage Layer status and performs recovery. e.g.
 e.g. (example contains comments which are not supported by JSON. Please delete these comments when trying)
 ```json5
 {
-  "Status": "ready", // ready, reallocating, grouping, serving
+  "Status": "ready", // Node status: ready, reallocating, grouping, serving
   "NodeId": "1",
   "Role": "Leader",
   "Addr": "127.0.0.1:12345",
@@ -47,7 +48,7 @@ stateDiagram-v2
   state "Status: ready" as ready
   state "Status: grouping" as grouping
   state "Status: serving" as serving
-  state "Status: reallocting" as reallocating
+  state "Status: reallocating" as reallocating
   
   [*] --> ready: When an new node start hearting
   [*] --> grouping: When a just restarted node get newest nodemap and start catching log from leader
@@ -61,17 +62,22 @@ stateDiagram-v2
 
 Everytime nodemap updating, there is only 1 grouping update or only 1 reallocating update.
 
-grouping algorithm:
-1. tell the nodes the newest nodemap
-2. nodes findout the group it should be in.
-3. If new nodes are grouping, they find the first node in group nodes list and elect it the first term leader.
-4. When a node catch up with their new leader, Status -> ready.
+### Grouping Algorithm (Node Integration)
 
-Everytime reallocating, there are only two neighbour segment involved. One shrinking and one growing.
-The segment shrinking is the source segment, the segment growing is the destination segment
-Reallocating algorithm:
-1. Source segment and destination segment have both received newest nodemap.
-2. Source segment routes file writes intersecting area to shrinking segment, destination segment will log it.
-3. Destination segment get all files from source segment.
-4. Destination segment replay file writes.
-5. Reallocating is over.
+When new nodes are added or existing nodes rejoin the cluster, they undergo a grouping process:
+
+1.  **Receive Node Map:** The Monitor provides the node with the latest version of the node map (data distribution).
+2.  **Identify Group:** The node determines the storage group it belongs to based on the received node map.
+3.  **Leader Election (for new groups):** If the node is part of a newly formed group, the nodes in this group elect a leader (typically the first node in the group list for the initial term).
+4.  **Log Synchronization:** The node contacts the leader of its group to synchronize its local log, catching up on any writes that occurred while it was disconnected or initializing.
+5.  **Ready State:** Once the log is synchronized, the node transitions its status to `ready` (or `serving` if it has caught up and is fully operational).
+
+### Reallocating Algorithm (Data Re-balancing)
+
+Data reallocating (re-balancing) occurs when the node map changes, typically due to cluster scaling or to optimize data distribution. This process usually involves two neighboring segments (data ranges): one shrinking (source) and one growing (destination).
+
+1.  **Node Map Update:** Both the source and destination segment nodes receive the newest node map from the Monitor, indicating the new data boundaries.
+2.  **Write Forwarding (Source Segment):** The source segment nodes begin to route writes for data that now falls into the shrinking portion of its range to the destination segment. The destination segment logs these incoming writes.
+3.  **Data Migration:** The destination segment nodes pull the existing data files/slices that belong to their new, expanded range from the source segment nodes.
+4.  **Log Replay (Destination Segment):** After migrating the bulk data, the destination segment nodes replay the logged writes (from step 2) that occurred during the migration to ensure data consistency.
+5.  **Completion:** Once data migration and log replay are complete, the reallocation is considered over, and nodes update their status accordingly (e.g., to `serving`).
